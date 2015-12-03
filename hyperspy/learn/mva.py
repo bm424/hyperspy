@@ -964,7 +964,7 @@ class MVA():
         ----------
         n : int
             Number of components.
-        log : bool
+        log : booldc
             If True, the y axis uses a log scale.
 
         Returns

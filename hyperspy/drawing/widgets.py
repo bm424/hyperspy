@@ -577,3 +577,105 @@ class ModifiableSpanSelector(matplotlib.widgets.SpanSelector):
             self.canvas.mpl_disconnect(cid)
         self.ax.patches.remove(self.rect)
         self.ax.figure.canvas.draw()
+        
+class DraggableLine(object):
+    
+    def __init__(self, signal):
+        self.signal = signal
+        self.ax = signal._plot.signal_plot.ax
+        self.color = 'red'
+        self.linewidth = 3
+        self.line, = self.ax.plot([0,0], [0,0],
+                                 color=self.color,
+                                 linewidth = self.linewidth,
+                                 linestyle = 'solid',
+                                 animated = True)
+        xs = list(self.line.get_xdata())
+        ys = list(self.line.get_ydata())
+        self.start, self.end = (xs[0], ys[0]), (xs[1], ys[1])
+        self.line.figure.canvas.mpl_connect('button_press_event', self.on_press)
+        
+    def connect(self):        
+        self.connections = [
+        self.line.figure.canvas.mpl_connect('motion_notify_event', self.on_motion),
+        self.line.figure.canvas.mpl_connect('button_release_event', self.on_release),
+        ]
+        
+    def on_press(self, event):
+        self.connect()
+        self.start = (event.xdata, event.ydata)
+        self.end = (event.xdata, event.ydata)
+        self.draw()
+    
+    def on_motion(self, event):
+        self.end = (event.xdata, event.ydata)
+        self.draw()
+    
+    def on_release(self, event):
+        self.end = (event.xdata, event.ydata)
+        for connection in self.connections:
+            self.line.figure.canvas.mpl_disconnect(connection)
+        self.draw()
+    
+    def draw(self):
+        xs, ys = [self.start[0], self.end[0]], [self.start[1], self.end[1]]
+        self.line.set_data(xs, ys)
+        self.line.figure.canvas.draw()
+        
+class LoadingProfileLine(DraggableLine):
+    
+    def __init__(self, *args, **kwargs):
+        super(LoadingProfileLine, self).__init__(*args, **kwargs)
+        self.data = self.signal.data
+        self.loading_profile_axes = None
+    
+    def on_release(self, event):
+        super(LoadingProfileLine, self).on_release(event)
+        if not self.loading_profile_axes:
+            fig = plt.figure()
+            self.loading_profile_axes = fig.add_subplot(111)
+        self.plot_loadings_on_line()
+
+    def plot_loadings_on_line(self):
+        self.loading_profile_axes.cla()
+        points_on_line = self.points_on_line()
+        xs = points_on_line[:,0]
+        ys = points_on_line[:,1]
+        loading_values = self.data[:,ys,xs]
+        for l in loading_values:
+            self.loading_profile_axes.plot(l)
+        self.loading_profile_axes.legend(range(len(loading_values)))
+        self.loading_profile_axes.figure.canvas.draw()
+        
+    def points_on_line(self):
+        x0, y0 = int(self.start[0]), int(self.start[1])
+        x1, y1 = int(self.end[0]), int(self.end[1])
+        return bresenham_line(x0, y0, x1, y1)
+
+def bresenham_line(x0, y0, x1, y1):
+    points_in_line = []
+    dx = abs(x1-x0)
+    dy = abs(y1-y0)
+    x, y = x0, y0
+    sx = -1 if x0 > x1 else 1
+    sy = -1 if y0 > y1 else 1
+    if dx > dy:
+        err = dx/2.0
+        while x != x1:
+            points_in_line.append((x,y))
+            err -= dy
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+    elif dy >= dx:
+        err = dy/2.0
+        while y != y1:
+            points_in_line.append((x,y))
+            err -= dx
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+    points_in_line.append((x,y))
+    return np.array(points_in_line)

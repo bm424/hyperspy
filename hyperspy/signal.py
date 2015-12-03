@@ -2737,6 +2737,13 @@ class MVATools(object):
             factors or the loadings have signal dimension greater than 2
             we can view the data as spectra(images) by setting this parameter
             to 1(2). (Default 2)
+            
+        Returns
+        -------
+        loadings : Signal
+            The decomposition loadings as a signal
+        factors : Signal
+            The decomposition factors as a signal
 
         See Also
         --------
@@ -2752,7 +2759,8 @@ class MVATools(object):
             factors.axes_manager.set_signal_dimension(factors_dim)
         loadings.plot(navigator=loadings_navigator)
         factors.plot(navigator=factors_navigator)
-
+        return (loadings, factors)
+        
 
 class SpecialSlicersSignal(SpecialSlicers):
 
