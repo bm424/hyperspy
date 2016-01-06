@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright 2007-2015 The HyperSpy developers
+# Copyright 2007-2016 The HyperSpy developers
 #
 # This file is part of  HyperSpy.
 #
@@ -20,13 +20,12 @@ from __future__ import division
 import traits.api as t
 import numpy as np
 
-# from hyperspy import utils
+
 from hyperspy._signals import Image
 from hyperspy.decorators import only_interactive
 from hyperspy.gui.eds import TEMParametersUI
 from hyperspy.defaults_parser import preferences
 import hyperspy.gui.messages as messagesui
-# from hyperspy.misc.sed import utils as utils_sed
 
 
 class SEDPattern(Image):
@@ -211,7 +210,7 @@ class SEDPattern(Image):
 
     def decomposition(self,
                       normalize_poissonian_noise=True,
-                      navigation_mask=4.0,
+                      direct_beam_mask=4.0,
                       *args,
                       **kwargs):
         """
@@ -223,7 +222,7 @@ class SEDPattern(Image):
         ----------
         normalize_poissonian_noise : bool
             If True, scale the SI to normalize Poissonian noise
-        navigation_mask : None or float or boolean numpy array
+        direct_beam_mask : None or float or boolean numpy array
             The navigation locations marked as True are not used in the
             decompostion. If float is given the direct_beam_mask method is used
             to generate a mask with the float value as radius.
@@ -258,49 +257,19 @@ class SEDPattern(Image):
 
         Examples
         --------
-        >>> s = hs.datasets.example_signals.EDS_TEM_Spectrum()
-        >>> si = hs.stack([s]*3)
-        >>> si.change_dtype(float)
-        >>> si.decomposition()
+        >>> im = hs.datasets.example_signals.SED_Pattern()
+        >>> ims = hs.stack([s]*3)
+        >>> ims.change_dtype(float)
+        >>> ims.decomposition()
 
         See also
         --------
-        vacuum_mask
+        direct_beam_mask
         """
-        if isinstance(navigation_mask, float):
-            navigation_mask = self.direct_beam_mask(navigation_mask).data
+        if isinstance(direct_beam_mask, float):
+            navigation_mask = self.direct_beam_mask(direct_beam_mask).data
         super(Image, self).decomposition(
             normalize_poissonian_noise=normalize_poissonian_noise,
             navigation_mask=navigation_mask, *args, **kwargs)
         self.learning_results.loadings = np.nan_to_num(
             self.learning_results.loadings)
-
-    def create_model(self,
-                     auto_background=True,
-                     auto_find_peaks=True,
-                     *args, **kwargs):
-        """Create a model for the current SED patterns.
-
-        Parameters
-        ----------
-        auto_background : boolean, default True
-            If True, adds automatically a gaussian to the model, using
-            the edmodel.add_gaussian_diffuse method.
-        auto_find_peaks : boolean, default True
-            If True, automatically add 2-dimensional Gaussians for all
-            reflections found in the diffraction pattern.
-        dictionary : {None, dict}, optional
-            A dictionary to be used to recreate a model. Usually generated
-            using :meth:`hyperspy.model.as_dictionary`
-
-        Returns
-        -------
-
-        model : `EDSTEMModel` instance.
-
-        """
-        from hyperspy.models.edmodel import EDModel
-        model = EDModel(self,
-                        auto_background=auto_background,
-                        auto_find_peaks=auto_find_peaks)
-        return model
