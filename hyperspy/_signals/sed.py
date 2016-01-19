@@ -23,7 +23,7 @@ import numpy as np
 
 from hyperspy._signals.image import Image
 from hyperspy.decorators import only_interactive
-from hyperspy.gui.eds import TEMParametersUI
+from hyperspy.gui.sed import SEDParametersUI
 from hyperspy.defaults_parser import preferences
 import hyperspy.gui.messages as messagesui
 
@@ -47,7 +47,7 @@ class SEDPattern(Image):
         """
 
         md = self.metadata
-        md.Signal.signal_type = 'EDS_TEM'
+        md.Signal.signal_type = 'SED_Pattern'
 
         if "md.Acquisition_instrument.TEM.accelerating_voltage" not in md:
             md.set_item(
@@ -129,10 +129,10 @@ class SEDPattern(Image):
 
     @only_interactive
     def _set_microscope_parameters(self):
-        tem_par = TEMParametersUI()
+        sed_par = SEDParametersUI()
         mapping = {
             'Acquisition_instrument.TEM.accelerating_voltage':
-            'tem_par.beam_energy',
+            'tem_par.accelerating_voltage',
             'Acquisition_instrument.TEM.convergence_angle':
             'tem_par.convergence_angle',
             'Acquisition_instrument.TEM.precession_angle':
@@ -144,19 +144,19 @@ class SEDPattern(Image):
         for key, value in mapping.iteritems():
             if self.metadata.has_item(key):
                 exec('%s = self.metadata.%s' % (value, key))
-        tem_par.edit_traits()
+        sed_par.edit_traits()
 
         mapping = {
             'Acquisition_instrument.TEM.accelerating_voltage':
-            tem_par.beam_energy,
+            sed_par.accelerating_voltage,
             'Acquisition_instrument.TEM.convergence_angle':
-            tem_par.convergence_angle,
+            sed_par.convergence_angle,
             'Acquisition_instrument.TEM.precession_angle':
-            tem_par.precession_angle,
+            sed_par.precession_angle,
             'Acquisition_instrument.TEM.precession_frequency':
-            tem_par.precession_frequency,
+            sed_par.precession_frequency,
             'Acquisition_instrument.TEM.Detector.SED.exposure_time':
-            tem_par.exposure_time, }
+            sed_par.exposure_time, }
 
         for key, value in mapping.iteritems():
             if value != t.Undefined:
@@ -193,6 +193,34 @@ class SEDPattern(Image):
 
     def get_direct_beam_position(self):
         """
+        Locate the position of the direct beam and hence an estimate for the
+        position of the pattern center.
+
+        Parameters
+        ----------
+        box_size: integer
+            Size of the box within which the direct beam position is refined.
+
+        Return
+        ------
+        center: tuple
+            Position (x, y) of the direct beam position.
+
+        """
+
+    def align_patterns(self):
+        """
+        Align the diffraction patterns based on found direct beam positions.
+
+        Parameters
+        ----------
+
+        Return
+        ------
+
+        See also
+        --------
+
 
         """
 
@@ -214,8 +242,9 @@ class SEDPattern(Image):
         mask: signal
             The mask of the direct beam
         """
-
         r = radius
+        ny = self.axes_manager.signal_shape[1]
+        nx = self.axes_manager.signal_shape[0]
 
         y, x = np.ogrid[-center[0]:ny-center[0], -center[1]:nx-center[1]]
         mask = x*x + y*y <= r*r
