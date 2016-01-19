@@ -21,7 +21,7 @@ import traits.api as t
 import numpy as np
 
 
-from hyperspy._signals import Image
+from hyperspy._signals.image import Image
 from hyperspy.decorators import only_interactive
 from hyperspy.gui.eds import TEMParametersUI
 from hyperspy.defaults_parser import preferences
@@ -191,7 +191,12 @@ class SEDPattern(Image):
         else:
             return False
 
-    def direct_beam_mask(self, radius):
+    def get_direct_beam_position(self):
+        """
+
+        """
+
+    def direct_beam_mask(self, radius, center):
         """
         Generate a mask for the direct beam.
 
@@ -200,12 +205,20 @@ class SEDPattern(Image):
         radius: float
             User specified radius for the circular mask.
 
+        center: tuple
+            User specified (y, x) position of the diffraction pattern center.
+            i.e. the direct beam position.
+
         Return
         ------
         mask: signal
             The mask of the direct beam
         """
-        mask = (self.max(-1) <= radius)
+
+        r = radius
+
+        y, x = np.ogrid[-center[0]:ny-center[0], -center[1]:nx-center[1]]
+        mask = x*x + y*y <= r*r
         return mask
 
     def decomposition(self,
