@@ -19,6 +19,7 @@ from __future__ import division
 
 import traits.api as t
 import numpy as np
+import scipy.ndimage as ndi
 
 
 from hyperspy._signals.image import Image
@@ -191,24 +192,54 @@ class SEDPattern(Image):
         else:
             return False
 
-    def get_direct_beam_position(self):
+    def _get_direct_beam_position(self, z, center, radius, subpixel):
         """
         Locate the position of the direct beam and hence an estimate for the
-        position of the pattern center.
+        position of the pattern center in each SED pattern.
 
         Parameters
         ----------
-        box_size: integer
-            Size of the box within which the direct beam position is refined.
+        radius : integer
+            Defines the size of the circular region within which the direct beam
+            position is refined.
+
+        subpixel : bool
+            If True the direct beam position is refined to sub-pixel precision
+            via calculation of the intensity center of mass.
 
         Return
         ------
-        center: tuple
-            Position (x, y) of the direct beam position.
+        center: array
+            Refined position (x, y) of the direct beam.
 
+        Notes
+        -----
+        This method is based on work presented by Thomas White in his PhD (2009)
+        which itself built on Zaefferer (2000).
         """
+        c_int = z[center[1], center[0]]
+        # perform pixel level search by moving center to highest intensity pixel
+        # in search region and iterating until no higher value found.
+        ny = self.axes_manager.signal_shape[1]
+        nx = self.axes_manager.signal_shape[0]
+        y, x = np.ogrid[-center[0]:ny-center[0], -center[1]:nx-center[1]]
+        mask = x * x + y * y <= radius * radius
+        z_tmp = z * mask
+        max_int = z_tmp.max()
+        if c_int < max_int:
+            center = z_tmp.index(max(z_tmp))
+        else:
+            center = center
+        # refine center value to sub-pixel accuracy by evaluating intensity
+        # centre of mass.
+        if subpixel is True:
+            center = center
+        else:
+            pass
 
-    def align_patterns(self):
+        return center
+
+    def align_patterns(self, radius=10, subpixel=False):
         """
         Align the diffraction patterns based on found direct beam positions.
 
@@ -220,34 +251,90 @@ class SEDPattern(Image):
 
         See also
         --------
-
+        _get_direct_beam_position
 
         """
+        # sum images to produce image in which direct beam reinforced and take
+        # the position of max. intensity as the reference
+        dp_sum = self.sum()
+        c_ref = dp_sum.index(max(dp_sum))
+        # specify array of dims (nav_size, 2) in which to store centers and find
+        # the center of each pattern by determining the direct beam position.
+        arr_shape = (self.axes_manager._navigation_shape_in_array
+                     if self.axes_manager.navigation_size > 0
+                     else [1, ])
+        centers = np.zeros(arr_shape, dtype=object)
+        for z, indices in zip(self._iterate_signal(),
+                              self.axes_manager._array_indices_generator()):
+            centers[indices] = self._get_direct_beam_position(z, center=c_ref,
+                                                              radius=radius,
+                                                              subpixel=subpixel)
+        # calculate shifts to align all patterns to the reference position
+        shifts = centers - c_ref
+        self = self.align2D(crop=True, shifts=shifts)
 
-    def direct_beam_mask(self, radius, center):
+        return self
+
+    def direct_beam_mask(self, radius):
         """
-        Generate a mask for the direct beam.
+        Generate a signal mask for the direct beam.
 
         Parameters
         ----------
-        radius: float
+        radius : int
             User specified radius for the circular mask.
 
-        center: tuple
-            User specified (y, x) position of the diffraction pattern center.
+        center : tuple
+            User specified (x, y) position of the diffraction pattern center.
             i.e. the direct beam position.
 
         Return
         ------
-        mask: signal
+        mask : array
             The mask of the direct beam
         """
         r = radius
-        ny = self.axes_manager.signal_shape[1]
-        nx = self.axes_manager.signal_shape[0]
+        ny = self.axes_manager.signal_shape[1] / 2
+        nx = self.axes_manager.signal_shape[0] / 2
 
-        y, x = np.ogrid[-center[0]:ny-center[0], -center[1]:nx-center[1]]
+        y, x = np.ogrid[-ny:ny, -nx:nx]
         mask = x*x + y*y <= r*r
+        return mask
+
+    def vacuum_mask(self, radius, threshold, closing=True, opening=False):
+        """
+        Generate a navigation mask to exlude SED patterns acquired in vacuum.
+
+        Parameters
+        ----------
+        radius: int
+            Radius of circular mask to exclude direct beam.
+
+        center : tuple
+            User specified position of the diffraction pattern center.
+
+        threshold : float
+            Minimum intensity  required to consider a diffracted beam to be
+            present.
+
+        Returns
+        -------
+        mask : signal
+            The mask of the region of interest.
+        """
+        db = np.invert(self.direct_beam_mask(radius=radius))
+        diff_only = self * db
+        mask = (diff_only.max(-1) <= threshold)
+        if closing:
+            mask.data = ndi.morphology.binary_dilation(mask.data,
+                                                       border_value=0)
+            mask.data = ndi.morphology.binary_erosion(mask.data,
+                                                      border_value=1)
+        if opening:
+            mask.data = ndi.morphology.binary_erosion(mask.data,
+                                                      border_value=1)
+            mask.data = ndi.morphology.binary_dilation(mask.data,
+                                                       border_value=0)
         return mask
 
     def decomposition(self,
@@ -309,9 +396,11 @@ class SEDPattern(Image):
         direct_beam_mask
         """
         if isinstance(direct_beam_mask, float):
-            navigation_mask = self.direct_beam_mask(direct_beam_mask).data
+            signal_mask = self.direct_beam_mask(direct_beam_mask).data
         super(Image, self).decomposition(
             normalize_poissonian_noise=normalize_poissonian_noise,
-            navigation_mask=navigation_mask, *args, **kwargs)
+            signal_mask=signal_mask, *args, **kwargs)
         self.learning_results.loadings = np.nan_to_num(
             self.learning_results.loadings)
+        # TODO: Need to add in use of the vacuum mask as well as this direct
+        # beam mask
