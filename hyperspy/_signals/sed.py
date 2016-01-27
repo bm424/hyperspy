@@ -324,7 +324,7 @@ class SEDPattern(Image):
         """
         db = np.invert(self.direct_beam_mask(radius=radius))
         diff_only = self * db
-        mask = (diff_only.max(-1) <= threshold)
+        mask = (diff_only.max((-1, -2)) <= threshold)
         if closing:
             mask.data = ndi.morphology.binary_dilation(mask.data,
                                                        border_value=0)
