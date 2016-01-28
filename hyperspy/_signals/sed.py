@@ -192,14 +192,15 @@ class SEDPattern(Image):
         else:
             return False
 
-    def _get_direct_beam_position(self, z, center, radius, subpixel):
+    def _get_direct_beam_position(self, z, center=None, radius=None,
+                                  subpixel=None):
         """
-        Locate the position of the direct beam and hence an estimate for the
+        Refine the position of the direct beam and hence an estimate for the
         position of the pattern center in each SED pattern.
 
         Parameters
         ----------
-        radius : integer
+        radius : int
             Defines the size of the circular region within which the direct beam
             position is refined.
 
@@ -217,37 +218,50 @@ class SEDPattern(Image):
         This method is based on work presented by Thomas White in his PhD (2009)
         which itself built on Zaefferer (2000).
         """
-        c_int = z[center[1], center[0]]
-        # perform pixel level search by moving center to highest intensity pixel
-        # in search region and iterating until no higher value found.
-        ny = self.axes_manager.signal_shape[1]
-        nx = self.axes_manager.signal_shape[0]
+        # initialise problem with initial center estimate
+        c_int = z[center[0], center[1]]
+        ny = z.shape[1]
+        nx = z.shape[0]
         y, x = np.ogrid[-center[0]:ny-center[0], -center[1]:nx-center[1]]
         mask = x * x + y * y <= radius * radius
         z_tmp = z * mask
-        max_int = z_tmp.max()
-        if c_int < max_int:
-            center = z_tmp.index(max(z_tmp))
-        else:
-            center = center
-        # refine center value to sub-pixel accuracy by evaluating intensity
+        # refine center position to pixel level precision via optimisation of
+        # ROI
+        while c_int < z_tmp.max():
+            maxes = np.asarray(np.where(z_tmp == z_tmp.max()))
+            center = np.rint([np.average(maxes[0]), np.average(maxes[1])])
+            center = center.astype(int)
+            c_int = z[center[0], center[1]]
+            y, x = np.ogrid[-center[0]:ny-center[0], -center[1]:nx-center[1]]
+            mask = x * x + y * y <= radius * radius
+            z_tmp = z * mask
+        # refine center value to sub-pixel precision by evaluating intensity
         # centre of mass.
         if subpixel is True:
-            center = center
-        else:
-            pass
+            center = np.asarray(ndi.measurements.center_of_mass(z_tmp))
 
         return center
 
-    def align_patterns(self, radius=10, subpixel=False):
+    def direct_beam_shifts(self, radius=10, subpixel=False):
         """
-        Align the diffraction patterns based on found direct beam positions.
+        Determine rigid shifts in the SED patterns based on the position of the
+        direct beam and return the shifts required to center all patterns.
 
         Parameters
         ----------
+        radius : int
+            Defines the size of the circular region within which the direct beam
+            position is refined.
 
-        Return
-        ------
+        subpixel : bool
+            If True the direct beam position is refined to sub-pixel precision
+            via calculation of the intensity center_of_mass.
+
+        Returns
+        -------
+        shifts : array
+            Array containing the shift to be applied to each SED pattern to
+            center it.
 
         See also
         --------
@@ -255,25 +269,27 @@ class SEDPattern(Image):
 
         """
         # sum images to produce image in which direct beam reinforced and take
-        # the position of max. intensity as the reference
+        # the position of maximum intensity as the initial estimate of center.
         dp_sum = self.sum()
-        c_ref = dp_sum.index(max(dp_sum))
+        max_ref = np.asarray(np.where(dp_sum.data == dp_sum.data.max()))
+        c_ref = np.rint([np.average(max_ref[0]), np.average(max_ref[1])])
+        c_ref = c_ref.astype(int)
         # specify array of dims (nav_size, 2) in which to store centers and find
         # the center of each pattern by determining the direct beam position.
-        arr_shape = (self.axes_manager._navigation_shape_in_array
-                     if self.axes_manager.navigation_size > 0
-                     else [1, ])
-        centers = np.zeros(arr_shape, dtype=object)
-        for z, indices in zip(self._iterate_signal(),
-                              self.axes_manager._array_indices_generator()):
-            centers[indices] = self._get_direct_beam_position(z, center=c_ref,
-                                                              radius=radius,
-                                                              subpixel=subpixel)
+        arr_shape = (self.axes_manager.navigation_size, 2)
+        centers = np.zeros(arr_shape, dtype=int)
+        for z, index in zip(self._iterate_signal(),
+                            np.arange(0,
+                                      self.axes_manager.navigation_size,
+                                      1)):
+            centers[index] = self._get_direct_beam_position(z, center=c_ref,
+                                                            radius=radius,
+                                                            subpixel=subpixel)
         # calculate shifts to align all patterns to the reference position
-        shifts = centers - c_ref
-        self = self.align2D(crop=True, shifts=shifts)
+        shifts = centers - [self.axes_manager.signal_shape[0] / 2,
+                            self.axes_manager.signal_shape[1] / 2]
 
-        return self
+        return shifts
 
     def direct_beam_mask(self, radius):
         """
