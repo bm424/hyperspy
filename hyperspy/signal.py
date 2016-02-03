@@ -79,6 +79,8 @@ from hyperspy.misc.slicing import SpecialSlicers, FancySlicing
 from hyperspy.misc.utils import slugify
 from hyperspy.docstrings.signal import (
     ONE_AXIS_PARAMETER, MANY_AXIS_PARAMETER, OUT_ARG)
+from hyperspy.events import Events, Event
+from hyperspy.interactive import interactive
 
 
 class ModelManager(object):
@@ -517,6 +519,9 @@ class Signal2DTools(object):
             return_shifts = True
         else:
             return_shifts = False
+        if not np.any(shifts):
+            # The shift array if filled with zeros, nothing to do.
+            return
 
         if expand:
             # Expand to fit all valid data
@@ -571,6 +576,7 @@ class Signal2DTools(object):
             self.crop_image(top, bottom, left, right)
             shifts = -shifts
 
+        self.events.data_changed.trigger(obj=self)
         if return_shifts:
             return shifts
 
@@ -637,6 +643,9 @@ class Signal1DTools(object):
         SignalDimensionError if the signal dimension is not 1.
 
         """
+        if not np.any(shift_array):
+            # Nothing to do, the shift array if filled with zeros
+            return
         if show_progressbar is None:
             show_progressbar = preferences.General.show_progressbar
         self._check_signal_dimension_equals_one()
@@ -693,6 +702,8 @@ class Signal1DTools(object):
                       ilow,
                       ihigh)
 
+        self.events.data_changed.trigger(obj=self)
+
     def interpolate_in_between(self, start, end, delta=3,
                                show_progressbar=None, **kwargs):
         """Replace the data in a given range by interpolation.
@@ -741,6 +752,7 @@ class Signal1DTools(object):
                 **kwargs)
             dat[i1:i2] = dat_int(range(i1, i2))
             pbar.update(i + 1)
+        self.events.data_changed.trigger(obj=self)
 
     def _check_navigation_mask(self, mask):
         if mask is not None:
@@ -1081,7 +1093,7 @@ class Signal1DTools(object):
                 deriv=differential_order,
                 delta=axis.scale,
                 axis=axis.index_in_array)
-
+            self.events.data_changed.trigger(obj=self)
         else:
             # Interactive mode
             smoother = SmoothingSavitzkyGolay(self)
@@ -1333,6 +1345,7 @@ class Signal1DTools(object):
             self.data,
             axis=axis.index_in_array,
             sigma=FWHM / 2.35482)
+        self.events.data_changed.trigger(obj=self)
 
     @auto_replot
     def hanning_taper(self, side='both', channels=None, offset=0):
@@ -1375,6 +1388,7 @@ class Signal1DTools(object):
                 np.hanning(2 * channels)[-channels:])
             if offset != 0:
                 dc[..., -offset:] *= 0.
+        self.events.data_changed.trigger(obj=self)
         return channels
 
     def find_peaks1D_ohaver(self, xdim=None, slope_thresh=0, amp_thresh=None,
@@ -2818,6 +2832,20 @@ class Signal(FancySlicing,
         self.auto_replot = True
         self.inav = SpecialSlicersSignal(self, True)
         self.isig = SpecialSlicersSignal(self, False)
+        self.events = Events()
+        self.events.data_changed = Event("""
+            Event that triggers when the data has changed
+
+            The event trigger when the data is ready for consumption by any
+            process that depend on it as input. Plotted signals automatically
+            connect this Event to its `Signal.plot()`.
+
+            Note: The event only fires at certain specific times, not everytime
+            that the `Signal.data` array changes values.
+
+            Arguments:
+                obj: The signal that owns the data.
+            """, arguments=['obj'])
 
     def _create_metadata(self):
         self.metadata = DictionaryTreeBrowser()
@@ -3239,11 +3267,22 @@ class Signal(FancySlicing,
                 if self.axes_manager.signal_dimension == 0:
                     navigator = self.deepcopy()
                 else:
-                    navigator = self.sum(self.axes_manager.signal_axes)
+                    navigator = interactive(
+                        self.sum,
+                        self.events.data_changed,
+                        self.axes_manager.events.any_axis_changed,
+                        self.axes_manager.signal_axes)
                 if navigator.axes_manager.navigation_dimension == 1:
-                    navigator = navigator.as_spectrum(0)
+                    navigator = interactive(
+                        navigator.as_spectrum,
+                        navigator.events.data_changed,
+                        navigator.axes_manager.events.any_axis_changed, 0)
                 else:
-                    navigator = navigator.as_image((0, 1))
+                    navigator = interactive(
+                        navigator.as_image,
+                        navigator.events.data_changed,
+                        navigator.axes_manager.events.any_axis_changed,
+                        (0, 1))
             else:
                 navigator = None
         # Navigator properties
@@ -3284,6 +3323,11 @@ class Signal(FancySlicing,
                     " \"slider\", None, a Signal instance")
 
         self._plot.plot(**kwargs)
+        self.events.data_changed.connect(self.update_plot, [])
+        if self._plot.signal_plot:
+            self._plot.signal_plot.events.closed.connect(
+                lambda: self.events.data_changed.disconnect(self.update_plot),
+                [])
 
     def save(self, filename=None, overwrite=None, extension=None,
              **kwds):
@@ -3349,6 +3393,14 @@ class Signal(FancySlicing,
             if self._plot.is_active() is True:
                 self.plot()
 
+    def update_plot(self):
+        if self._plot is not None:
+            if self._plot.is_active() is True:
+                if self._plot.signal_plot is not None:
+                    self._plot.signal_plot.update()
+                if self._plot.navigator_plot is not None:
+                    self._plot.navigator_plot.update()
+
     @auto_replot
     def get_dimensions_from_data(self):
         """Get the dimension parameters from the data_cube. Useful when
@@ -3387,6 +3439,7 @@ class Signal(FancySlicing,
 
         if i1 is not None:
             axis.offset = new_offset
+        self.events.data_changed.trigger(obj=self)
         self.get_dimensions_from_data()
         self.squeeze()
 
@@ -3520,6 +3573,8 @@ class Signal(FancySlicing,
                     new_shape)
         if out is None:
             return s
+        else:
+            out.events.data_changed.trigger(obj=out)
     rebin.__doc__ %= OUT_ARG
 
     def split(self,
@@ -3885,9 +3940,16 @@ class Signal(FancySlicing,
         data = self.data.reshape(new_shape).squeeze()
 
         if out:
-            function(data, axis=ar_axes[0], out=out.data)
+            data = np.atleast_1d(function(data, axis=ar_axes[0],))
+            if data.shape == out.data.shape:
+                out.data[:] = data
+                out.events.data_changed.trigger(obj=out)
+            else:
+                raise ValueError(
+                    "The output shape %s does not match  the shape of "
+                    "`out` %s" % (data.shape, out.data.shape))
         else:
-            s.data = function(data, axis=ar_axes[0])
+            s.data = function(data, axis=ar_axes[0],)
             s._remove_axis([ax.index_in_axes_manager for ax in axes])
             return s
 
@@ -3896,6 +3958,9 @@ class Signal(FancySlicing,
         axes = self.axes_manager[axes]
         if not np.iterable(axes):
             axes = (axes,)
+        # Use out argument in numpy function when available for operations that
+        # do not return scalars in numpy.
+        np_out = not len(self.axes_manager._axes) == len(axes)
         ar_axes = tuple(ax.index_in_array for ax in axes)
         if len(ar_axes) == 1:
             ar_axes = ar_axes[0]
@@ -3903,12 +3968,25 @@ class Signal(FancySlicing,
         s = out or self._deepcopy_with_new_data(None)
 
         if np.ma.is_masked(self.data):
-            return self._ma_workaround(s, function, axes, ar_axes, out)
+            return self._ma_workaround(s=s, function=function, axes=axes,
+                                       ar_axes=ar_axes, out=out)
         if out:
-            function(self.data, axis=ar_axes, out=out.data)
+            if np_out:
+                function(self.data, axis=ar_axes, out=out.data,)
+            else:
+                data = np.atleast_1d(function(self.data, axis=ar_axes,))
+                if data.shape == out.data.shape:
+                    out.data[:] = data
+                else:
+                    raise ValueError(
+                        "The output shape %s does not match  the shape of "
+                        "`out` %s" % (data.shape, out.data.shape))
+            out.events.data_changed.trigger(obj=out)
         else:
-            s.data = function(self.data, axis=ar_axes)
+            s.data = np.atleast_1d(
+                function(self.data, axis=ar_axes,))
             s._remove_axis([ax.index_in_axes_manager for ax in axes])
+            s.events.data_changed.trigger(self)
             return s
 
     def sum(self, axis=None, out=None):
@@ -4145,6 +4223,8 @@ class Signal(FancySlicing,
         s.get_dimensions_from_data()
         if out is None:
             return s
+        else:
+            out.events.data_changed.trigger(obj=out)
     diff.__doc__ %= (ONE_AXIS_PARAMETER, OUT_ARG)
 
     def derivative(self, axis, order=1, out=None):
@@ -4180,6 +4260,8 @@ class Signal(FancySlicing,
         der.data /= axis.scale ** order
         if out is None:
             return der
+        else:
+            out.events.data_changed.trigger(obj=out)
     derivative.__doc__ %= (ONE_AXIS_PARAMETER, OUT_ARG)
 
     def integrate_simpson(self, axis, out=None):
@@ -4215,6 +4297,7 @@ class Signal(FancySlicing,
                                   axis=axis.index_in_array)
         if out is not None:
             out.data[:] = data
+            out.events.data_changed.trigger(obj=out)
         else:
             s.data = data
             s._remove_axis(axis.index_in_axes_manager)
@@ -4315,13 +4398,13 @@ class Signal(FancySlicing,
 
         """
         idx = self.indexmax(axis)
-        s = out or idx
         data = self.axes_manager[axis].index2value(idx.data)
         if out is None:
             idx.data = data
             return idx
         else:
             out.data[:] = data
+            out.events.data_changed.trigger(obj=out)
     valuemax.__doc__ %= (ONE_AXIS_PARAMETER, OUT_ARG)
 
     def get_histogram(self, bins='freedman', range_bins=None, out=None,
@@ -4402,6 +4485,8 @@ class Signal(FancySlicing,
         hist_spec.metadata.Signal.binned = True
         if out is None:
             return hist_spec
+        else:
+            out.events.data_changed.trigger(obj=out)
     get_histogram.__doc__ %= OUT_ARG
 
     def map(self, function,
@@ -4511,6 +4596,7 @@ class Signal(FancySlicing,
                 data[0][:] = function(data[0], **kwargs)
                 pbar.next()
             pbar.finish()
+        self.events.data_changed.trigger(obj=self)
 
     def copy(self):
         try:
@@ -4883,6 +4969,7 @@ class Signal(FancySlicing,
             return sp
         else:
             out.data[:] = sp.data
+            out.events.data_changed.trigger(obj=out)
     as_spectrum.__doc__ %= (ONE_AXIS_PARAMETER, OUT_ARG)
 
     def as_image(self, image_axes, out=None):
@@ -4929,6 +5016,7 @@ class Signal(FancySlicing,
             return im
         else:
             out.data[:] = im.data
+            out.events.data_changed.trigger(obj=out)
     as_image.__doc__ %= OUT_ARG
 
     def _assign_subclass(self):
@@ -5067,7 +5155,7 @@ class Signal(FancySlicing,
         Examples
         -------
         >>> import scipy.misc
-        >>> im = hs.signals.Image(scipy.misc.lena())
+        >>> im = hs.signals.Image(scipy.misc.ascent())
         >>> m = hs.plot.markers.rectangle(x1=150, y1=100, x2=400,
         >>>                                  y2=400, color='red')
         >>> im.add_marker(m)
