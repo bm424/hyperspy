@@ -355,7 +355,10 @@ class SEDPattern(Image):
 
     def decomposition(self,
                       normalize_poissonian_noise=True,
-                      direct_beam_mask=4.0,
+                      signal_mask=4.0,
+                      navigation_mask=10.0,
+                      threshold=15.0,
+                      closing=True,
                       *args,
                       **kwargs):
         """
@@ -411,12 +414,13 @@ class SEDPattern(Image):
         --------
         direct_beam_mask
         """
-        if isinstance(direct_beam_mask, float):
-            signal_mask = self.direct_beam_mask(direct_beam_mask).data
+        if isinstance(signal_mask, float):
+            signal_mask = self.direct_beam_mask(signal_mask)
+        if isinstance(navigation_mask, float):
+            navigation_mask = self.vacuum_mask(navigation_mask, threshold).data
         super(Image, self).decomposition(
             normalize_poissonian_noise=normalize_poissonian_noise,
-            signal_mask=signal_mask, *args, **kwargs)
+            signal_mask=signal_mask, navigation_mask=navigation_mask,
+            *args, **kwargs)
         self.learning_results.loadings = np.nan_to_num(
             self.learning_results.loadings)
-        # TODO: Need to add in use of the vacuum mask as well as this direct
-        # beam mask
