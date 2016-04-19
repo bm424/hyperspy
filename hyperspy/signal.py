@@ -5082,18 +5082,20 @@ class Signal(FancySlicing,
 
         Parameters
         ----------
-        signal_type : {"EELS", "EDS_TEM", "EDS_SEM", "DielectricFunction"}
+        signal_type : {"EELS", "EDS_TEM", "EDS_SEM", "SED_Pattern",
+                       "DielectricFunction"}
             Currently there are special features for "EELS" (electron
             energy-loss spectroscopy), "EDS_TEM" (energy dispersive X-rays of
             thin samples, normally obtained in a transmission electron
             microscope), "EDS_SEM" (energy dispersive X-rays of thick samples,
-            normally obtained in a scanning electron microscope) and
-            "DielectricFuction". Setting the signal_type to the correct acronym
-            is highly advisable when analyzing any signal for which HyperSpy
-            provides extra features. Even if HyperSpy does not provide extra
-            features for the signal that you are analyzing, it is good practice
-            to set signal_type to a value that best describes the data signal
-            type.
+            normally obtained in a scanning electron microscope), "SED_Pattern"
+            (electron diffraction patterns acquired in a transmission electron
+            microscope), and "DielectricFuction". Setting the signal_type to 
+            the correct acronym is highly advisable when analyzing any signal 
+            for which HyperSpy provides extra features. Even if HyperSpy does 
+            not provide extra features for the signal that you are analyzing, 
+            it is good practice to set signal_type to a value that best 
+            describes the data signal type.
 
         """
         self.metadata.Signal.signal_type = signal_type
