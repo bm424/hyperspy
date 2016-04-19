@@ -20,6 +20,7 @@ from __future__ import division
 import traits.api as t
 import numpy as np
 import scipy.ndimage as ndi
+from skimage import morphology
 
 
 from hyperspy._signals.image import Image
@@ -191,6 +192,21 @@ class SEDPattern(Image):
                 return True
         else:
             return False
+
+    def _regional_filter(self, z, h):
+        seed = np.copy(z)
+        seed = z - h
+        mask = z
+        dilated = morphology.reconstruction(seed, mask, method='dilation')
+
+        return z - dilated
+
+    def remove_background(self, h):
+        self.data = self.data / self.data.max()
+        self.map(_regional_filter, h=h)
+        self.map(filters.rank.mean, selem=square(3))
+        self.data = self.data / self.data.max()
+
 
     def _get_direct_beam_position(self, z, center=None, radius=None,
                                   subpixel=None):
