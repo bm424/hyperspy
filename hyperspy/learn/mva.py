@@ -84,7 +84,7 @@ def _normalize_components(target, other, function=np.sum):
     other *= coeff
 
 
-class MVA():
+class MVA:
 
     """
     Multivariate analysis capabilities for the Spectrum class.
@@ -1016,6 +1016,10 @@ class LearningResults(object):
     # Masks
     navigation_mask = None
     signal_mask = None
+    # Clusters
+    centers = None
+    membership = None
+    cluster_algorithm = None
 
     def save(self, filename, overwrite=None):
         """Save the result of the decomposition and demixing analysis
