@@ -7,9 +7,9 @@ from .algorithms import ProbabilisticFuzzy
 
 
 class ClusterTools:
-
     def cluster(self, n_clusters=2, algorithm=ProbabilisticFuzzy,
-                use_learning_results=True, attempts=1, **kwargs):
+                use_learning_results=True, attempts=1, signal_mask=None,
+                navigation_mask=None, **kwargs):
         """Assigns the data to automatically-inferred clusters.
 
         Parameters
@@ -28,9 +28,23 @@ class ClusterTools:
             documentation for details).
 
         """
-        self.unfold()
-        try:
+        with self.unfolded():
             self._use_learning_results = use_learning_results
+
+            if hasattr(signal_mask, 'ravel'):
+                signal_mask = signal_mask.ravel()
+            elif hasattr(navigation_mask, 'ravel'):
+                navigation_mask = navigation_mask.ravel()
+
+            # Transform the None masks in slices to get the right behaviour
+            if navigation_mask is None:
+                navigation_mask = slice(None)
+            else:
+                navigation_mask = ~navigation_mask
+            if signal_mask is None:
+                signal_mask = slice(None)
+            else:
+                signal_mask = ~signal_mask
 
             if use_learning_results is False:
                 self.x = self.data
@@ -41,14 +55,30 @@ class ClusterTools:
                     "'_use_learning_results' must be True or False")
 
             target = self.learning_results
-            result = try_again(self.x, n_clusters, algorithm, attempts,
-                               **kwargs)
+            result = try_again(self.x[:, signal_mask][navigation_mask, :],
+                               n_clusters, algorithm, attempts, **kwargs)
             target.centers = result.C
             target.membership = result.U
             target.cluster_algorithm = result
 
-        finally:
-            self.fold()
+            # Set the pixels that were not processed to nan
+            if not isinstance(signal_mask, slice):
+                # Store the (inverted, as inputed) signal mask
+                target.signal_mask = ~signal_mask.reshape(
+                    self.axes_manager._signal_shape_in_array)
+                centers = np.zeros((self.x.shape[-1], target.centers.shape[1]))
+                centers[signal_mask, :] = target.centers
+                centers[~signal_mask, :] = np.nan
+                target.centers = centers
+            if not isinstance(navigation_mask, slice):
+                # Store the (inverted, as inputed) navigation mask
+                target.navigation_mask = ~navigation_mask.reshape(
+                    self.axes_manager._navigation_shape_in_array)
+                membership = np.zeros((target.membership.shape[0],
+                                       self.x.shape[0]))
+                membership[:, navigation_mask] = target.membership
+                membership[:, ~navigation_mask] = np.nan
+                target.membership = membership
 
     def undecompose(self, points):
         """
@@ -157,7 +187,7 @@ class ClusterTools:
         """
 
         try:
-            x = self.x
+            x = self.learning_results.loadings
         except AttributeError:
             self.unfold()
             x = self.data
@@ -193,7 +223,8 @@ class ClusterTools:
         plt.legend(s_list, range(q))
         return ax
 
-    def plot3d(self, indices=(0, 1, 2), size_multiplier=30., size_offset=1.):
+    def plot3d(self, indices=(0, 1, 2), size_multiplier=30., size_offset=0.,
+               navigation_mask=None):
         """Creates a plot of the data projected into three dimensions.
 
         Different clusters are plotted in different colours, and the
@@ -220,13 +251,14 @@ class ClusterTools:
 
         """
         try:
-            x = self.x
+            x = self.learning_results.loadings
         except AttributeError:
             self.unfold()
             x = self.data
             self.fold()
         u = self.learning_results.membership
         c = self.learning_results.centers
+
         try:
             q = len(u)
         except TypeError:
