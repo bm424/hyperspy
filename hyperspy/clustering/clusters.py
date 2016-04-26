@@ -193,7 +193,7 @@ class ClusterTools:
         plt.legend(s_list, range(q))
         return ax
 
-    def plot3d(self, indices=(0, 1, 2), size_multiplier=30., size_offset=1.):
+    def plot3d(self, indices=(0, 1, 2), size_multiplier=30., size_offset=0.):
         """Creates a plot of the data projected into three dimensions.
 
         Different clusters are plotted in different colours, and the
