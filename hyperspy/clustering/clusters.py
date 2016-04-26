@@ -122,16 +122,17 @@ class ClusterTools:
         centers = self.undecompose_centers()
         return self._get_factors(centers)
 
-    def plot_cluster_centers(self):
+    def plot_cluster_centers(self, **kwargs):
         """Plots the cluster centers in their original dimensionality."""
         c = self.undecompose_centers()
-        return self._plot_factors_or_pchars(c, comp_label="Cluster center")
+        return self._plot_factors_or_pchars(c, comp_label="Cluster center",
+                                            **kwargs)
 
     def get_cluster_memberships(self):
         """Returns the cluster memberships as a signal."""
         return self._get_loadings(self.learning_results.membership.T)
 
-    def plot_cluster_memberships(self, with_centers=False, per_row=3):
+    def plot_cluster_memberships(self, with_centers=False, per_row=3, **kwargs):
         """Plots cluster memberships."""
         u = self.learning_results.membership
         if with_centers is True:
@@ -140,7 +141,7 @@ class ClusterTools:
             factors = None
         return self._plot_loadings(u, comp_label="Cluster membership",
                                    with_factors=with_centers,
-                                   factors=factors, per_row=per_row)
+                                   factors=factors, per_row=per_row, **kwargs)
 
     def plot_cluster_results(self):
         """Plots the results of the clustering (memberships and centers)."""
