@@ -7,6 +7,7 @@ from .algorithms import ProbabilisticFuzzy
 
 
 class ClusterTools:
+
     def cluster(self, n_clusters=2, algorithm=ProbabilisticFuzzy,
                 use_learning_results=True, attempts=1, signal_mask=None,
                 navigation_mask=None, **kwargs):
@@ -162,8 +163,9 @@ class ClusterTools:
 
         """
         self.unfold()
+        x = self.learning_results.loadings
         u = self.learning_results.membership
-        partition = [self.x[m == np.max(u, axis=0)] for m in u]
+        partition = [x[m == np.max(u, axis=0)] for m in u]
         self.fold()
         return partition
 
