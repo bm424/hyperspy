@@ -23,11 +23,11 @@ class Validator(object):
 
         """
         self.cluster_pattern = cluster_pattern
-        self.data = cluster_pattern.x
+        self.data = cluster_pattern.learning_results.loadings
         self.partition = cluster_pattern.partition
-        self.membership = cluster_pattern.cluster_results.membership
-        self.centers = cluster_pattern.cluster_results.centers
-        self.algorithm = cluster_pattern.cluster_results.cluster_algorithm
+        self.membership = cluster_pattern.learning_results.membership
+        self.centers = cluster_pattern.learning_results.centers
+        self.algorithm = cluster_pattern.learning_results.cluster_algorithm
 
     @abc.abstractmethod
     def validate(self):
