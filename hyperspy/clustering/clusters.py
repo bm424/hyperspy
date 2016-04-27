@@ -131,8 +131,9 @@ class ClusterTools:
 
         """
         self.unfold()
+        x = self.learning_results.loadings
         u = self.learning_results.membership
-        partition = [self.x[m == np.max(u, axis=0)] for m in u]
+        partition = [x[m == np.max(u, axis=0)] for m in u]
         self.fold()
         return partition
 
