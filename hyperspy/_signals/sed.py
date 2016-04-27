@@ -18,9 +18,12 @@
 from __future__ import division
 
 import traits.api as t
+import math
 import numpy as np
 import scipy.ndimage as ndi
-from skimage import morphology
+from skimage import transform as tf
+from skimage import morphology, filters
+from skimage.morphology import square
 
 
 from hyperspy._signals.image import Image
@@ -28,6 +31,29 @@ from hyperspy.decorators import only_interactive
 from hyperspy.gui.sed import SEDParametersUI
 from hyperspy.defaults_parser import preferences
 import hyperspy.gui.messages as messagesui
+
+
+def _affine_transformation(self, z, order=3, **kwargs):
+    """Apply an affine transform to a 2-dimensional array.
+
+    Parameters
+    ----------
+    matrix : 3 x 3
+
+    Returns
+    -------
+    trans : array
+        Transformed 2-dimensional array
+    """
+    shift_y, shift_x = np.array(z.shape[:2]) / 2.
+    tf_shift = tf.SimilarityTransform(translation=[-shift_x, -shift_y])
+    tf_shift_inv = tf.SimilarityTransform(translation=[shift_x, shift_y])
+
+    transformation = tf.AffineTransform(**kwargs)
+    trans = tf.warp(z, (tf_shift + (transformation + tf_shift_inv)).inverse,
+                    order=order)
+
+    return trans
 
 
 class SEDPattern(Image):
@@ -193,6 +219,29 @@ class SEDPattern(Image):
         else:
             return False
 
+    def correct_geometric_distortion(self, D):
+        """Apply an affine transformation to all of the diffraction patterns to
+        correct for geometric distortion.
+
+        Parameters
+        ----------
+
+
+        Returns
+        -------
+
+
+        """
+        self.map(_affine_transformation, matrix=D)
+
+    def rotate_patterns(self, angle):
+        a = angle * np.pi/180.0
+        t = np.array([[math.cos(a), math.sin(a), 0.],
+                      [-math.sin(a), math.cos(a), 0.],
+                      [0., 0., 1.]])
+
+        self.map(_affine_transformation, matrix=t)
+
     def _regional_filter(self, z, h):
         seed = np.copy(z)
         seed = z - h
@@ -203,10 +252,9 @@ class SEDPattern(Image):
 
     def remove_background(self, h):
         self.data = self.data / self.data.max()
-        self.map(_regional_filter, h=h)
+        self.map(self._regional_filter, h=h)
         self.map(filters.rank.mean, selem=square(3))
         self.data = self.data / self.data.max()
-
 
     def _get_direct_beam_position(self, z, center=None, radius=None,
                                   subpixel=None):
@@ -371,7 +419,7 @@ class SEDPattern(Image):
 
     def decomposition(self,
                       normalize_poissonian_noise=True,
-                      signal_mask=4.0,
+                      signal_mask=None,
                       navigation_mask=10.0,
                       threshold=15.0,
                       closing=True,
