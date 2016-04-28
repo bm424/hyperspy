@@ -3,17 +3,14 @@
 Scanning Electron Diffraction (SED)
 ***********************************
 
-The methods described here are specific to the following signals:
+Methods to analyse scanning electron diffraction (SED) data acquired in a scanning transmission electron microscope (STEM) are described step-by-step in this chapter. These methods are specific to the signals in the :py:class:`~._signals.sed.SEDPattern` class.
 
-* :py:class:`~._signals.sed.SEDPattern`
+.. NOTE::
 
-This chapter describes step-by-step the analysis of a SED dataset
-acquired in a (S)TEM.
+    See also the `SED tutorials <http://nbviewer.ipython.org/github/hyperspy/hyperspy-	demos/blob/master/electron_microscopy/SED/>`_ .
 
-Spectrum loading and parameters
--------------------------------
 
-Data files used in the following examples can be downloaded using
+The data used throughout the following examples can be downloaded as follows:
 
 .. code-block:: python
 
@@ -23,7 +20,10 @@ Data files used in the following examples can be downloaded using
 
 .. NOTE::
 
-    The sample and the data used in this chapter are described in...
+    The sample and the data used in this chapter are described in D. Johnstone et al....
+
+Loading SED data & setting microscope parameters
+------------------------------------------------
 
 
 Loading
@@ -113,22 +113,49 @@ or raising the gui:
    SED preferences window.
 
 
-Alignment and masking
----------------------
+Pre-processing
+--------------
 
-Basic preprocessing of SED datasets involves aligning the recorded patterns such that all 
-have a common center and removing, by automated masking, parts of the dataset that are
-problematic for further analysis. Alignment is based on determining the direct beam position
-directly since it cannot be assumed, in general, that a recorded diffraction pattern is 
-symmetric. Masking methods are provided to remove saturated pixels associated with the direct 
-beam and to exclude data acquired in vacuum from further treatment.
+Basic pre-processing of SED datasets involves aligning the recorded electron diffraction patterns such that all have a common center, performing background subtraction, and masking the direct beam. Methods to achieve perform these pre-processing steps are available in HyperSpy as described below.
 
-The position of the direct beam can be estimated using the estimate_direct_beam_position()
-method. This method implements the peak refinement algorithm originially described by
-Zaeferrer [REF] to find the peak centre to pixel level accuracy.
+Further image processing methods that are not specifically implemented in HyperSpy but that are available in other python libraries, most particularly Scikit-Image, can be applied to multi-dimensional datasets using the :py:meth:`~.signal.map` method. As an example, the diffraction patterns could be log scaled for visualisation as follows:
+
+.. code-block:: python
+
+    >>> from skimage.filters import gaussian
+    >>> dp.map()
+
+
+External pre-processing methods of particular relevance to analysing SED data are:
+
+Normalisation based on total intensity
+Log scaling
+Gaussian blurring
+
+Background subtraction
+^^^^^^^^^^^^^^^^^^^^^^
+
+Background subtraction is performed primarily with two goals in mind: To make it easier to perform successful peak finding and/or to obtain accurate diffraction intensities. In the former case it is only important that the position of the peak is preserved, whereas in the latter case accurate fitting of the diffuse background to be removed is of importance.
+
+.. code-block:: python
+
+    >>> from skimage.filters import gaussian
+    >>> dp.map()
+
 
 Direct beam alignment
 ^^^^^^^^^^^^^^^^^^^^^
+
+Alignment is based on determining the direct beam position, which should be invariant throughout a stack of electron diffraction patterns. The position of the direct beam is estimated using the approach described by Zaeferrer [Ref, Zaeferrer 2000] and White [Ref, White Thesis] as follows:
+
+.. code-block:: python
+
+    >>> 
+    >>> dp.estimate_direct_beam_position()
+
+
+In brief, the py:meth:`~._signals.sed.estimate_direct_beam_position()` method first sums all diffraction patterns in the stack 
+
 
 Alignment based on the direct beam position can be performed using the align_direct_beam()
 method.
@@ -137,19 +164,13 @@ The align_direct_beam() method estimates the direct beam position in each SED pa
 the estimate_direct_beam_position() method, calculates the shift of each found position with
 respect to a specified reference, and applies these shifts using the align2D() method.
 
+
 Direct beam masking
 ^^^^^^^^^^^^^^^^^^^
 
-A signal mask that excludes pixels in the SED patterns containing the direct beam can be
-generated automatically using the direct_beam_mask() method. This is useful because pixels
-associated with the direct beam are often saturated and this can lead to issues with further
-analysis such as the application of unsupervised learning methods for decomposition.
+A signal mask that excludes pixels in the SED patterns containing the direct beam can be generated automatically using the py:meth:`~._signals.sed.direct_beam_mask()` method. This can be useful for visualisation if the direct beam is much more intense than diffracted beams and can alleviate issues associated with saturation of the direct beam that may affect further analysis.
 
-The direct_beam_mask() method estimates the direct beam position in each SED pattern using 
-the estimate_direct_beam_position() method and masks a circular region around that position
-with a user specified radius.
-
-The mask can be generated and checked as follows:
+The py:meth:`~._signals.sed.direct_beam_mask()` method estimates the direct beam position in each SED pattern using the py:meth:`~._signals.sed.estimate_direct_beam_position()` method and masks a circular region around that position with a user specified radius, as follows:
 
 .. code-block:: python
 
@@ -188,3 +209,57 @@ The method is applied as follows:
    :width: 400
 
    Automatically generated mask excluding SED patterns acquired in vacuum.
+
+
+'Virtual' diffraction imaging
+-----------------------------
+
+'Virtual' diffraction imaging involves plotting the intensity of a sub-set of pixels in each electron diffraction pattern comprising a SED dataset, as a function of probe position. In this way, variations in the diffraction condition are mapped. Forming such 'virtual' diffraction images in HyperSpy is easy using the 'interactive' and 'ROI' functionality of the signal class as follows:
+
+.. code-block:: python
+
+    >>> dp = hs.load("GaAs_nanowire_002.rpl", signal_type="SED_Pattern")
+    >>> 
+
+.. figure:: images/SED_vacuum_mask.png
+   :align: center
+   :width: 400
+
+   Automatically generated mask excluding SED patterns acquired in vacuum.
+
+
+Machine learning SED data
+-------------------------
+
+Machine learning decomposition approaches can be applied to SED data to separate diffraction signals arising from crystals that overlap in projection from the mixed diffraction patterns recorded. It has been shown that precession electron diffraction patterns are better suited to such analysis [Ref, Johnstone et al] and that separating signals in this way from SED data acquired through a tilt series can be used a basis to achieve 'scanning precession electron tomography' [Ref, Eggeman et al]. 
+
+
+PCA denoising
+^^^^^^^^^^^^^
+
+.. code-block:: python
+
+    >>> dp = hs.load("GaAs_nanowire_002.rpl", signal_type="SED_Pattern")
+    >>> 
+
+.. figure:: images/SED_vacuum_mask.png
+   :align: center
+   :width: 400
+
+   Automatically generated mask excluding SED patterns acquired in vacuum.
+
+
+Separating physical patterns
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: python
+
+    >>> dp = hs.load("GaAs_nanowire_002.rpl", signal_type="SED_Pattern")
+    >>> 
+
+.. figure:: images/SED_vacuum_mask.png
+   :align: center
+   :width: 400
+
+   Automatically generated mask excluding SED patterns acquired in vacuum.
+
