@@ -23,11 +23,11 @@ class Validator(object):
 
         """
         self.cluster_pattern = cluster_pattern
-        self.data = cluster_pattern.x
+        self.data = cluster_pattern.learning_results.loadings
         self.partition = cluster_pattern.partition
-        self.membership = cluster_pattern.cluster_results.membership
-        self.centers = cluster_pattern.cluster_results.centers
-        self.algorithm = cluster_pattern.cluster_results.cluster_algorithm
+        self.membership = cluster_pattern.learning_results.membership
+        self.centers = cluster_pattern.learning_results.centers
+        self.algorithm = cluster_pattern.learning_results.cluster_algorithm
 
     @abc.abstractmethod
     def validate(self):
@@ -79,7 +79,8 @@ class DaviesBouldin(Validator):
         m = self.intercluster_distances()
         s = self.cluster_scatter()
         r = (s + s[:, np.newaxis]) / m
-        r[r == np.inf] = 0
+        r[r == np.inf] = 0  # Same clusters shouldn't be compared.
+        r = np.nan_to_num(r)  # nan means zero spread in this case.
         d = np.max(r, axis=0)
         return np.mean(d)
 
@@ -90,8 +91,9 @@ class DaviesBouldin(Validator):
     def cluster_scatter(self):
         """Calculates the mean distance between data and cluster centers."""
 
-        return np.array([np.mean(Euclidean()(p - a), axis=0) for p, a in
-                         zip(self.partition, self.centers)])
+        return np.array(
+            [np.mean(Euclidean()(p, a.reshape(1, -1)), axis=1) for p, a in
+             zip(self.partition, self.centers)]).flatten()
 
 
 class Dunn(Validator):
@@ -164,8 +166,8 @@ class Dunn(Validator):
             cluster.
 
         """
-        ds = [np.mean(Euclidean()(p - np.mean(p, axis=0))) for p in
-              partition]
+        ds = [np.mean(Euclidean()(p, np.mean(p, axis=0).reshape(1, -1))) for p
+              in partition]
         return np.array(ds)
 
 
@@ -186,8 +188,7 @@ class PartitionCoefficient(Validator):
 
 class XieBeni(Validator):
     def validate(self):
-        spread = np.square(
-            Euclidean()(self.data - self.centers[:, np.newaxis]))
+        spread = np.square(Euclidean()(self.data, self.centers))
         separation = np.square(self.intercluster_distances())
         separation[separation == 0] = np.inf
         n = self.data.shape[0]
@@ -206,10 +207,11 @@ class PBMF(Validator):
         u = self.membership
         v = self.centers
         k = u.shape[0]
-        e1 = np.sum(np.square(u) * Euclidean()(x - np.mean(x, axis=0)))
-        ek = np.sum(np.square(u) * Euclidean()(x - v[:, np.newaxis]))
+        e1 = np.sum(np.square(u) * Euclidean()(x, np.mean(x, axis=0).reshape(
+            1, -1)))
+        ek = np.sum(np.square(u) * Euclidean()(x, v))
         dk = np.max(Euclidean()(v))
-        return (1./k * e1/ek * dk)**2
+        return (1. / k * e1 / ek * dk) ** 2
 
     @classmethod
     def seeks(cls, values):
