@@ -41,6 +41,7 @@ try:
     statsmodels_installed = True
 except:
     statsmodels_installed = False
+from skimage.feature import peak_local_max
 
 from hyperspy.axes import AxesManager
 from hyperspy import io
@@ -66,7 +67,10 @@ from hyperspy.decorators import only_interactive
 from hyperspy.decorators import interactive_range_selector
 from scipy.ndimage.filters import gaussian_filter1d
 from hyperspy.misc.spectrum_tools import find_peaks_ohaver
-from hyperspy.misc.image_tools import (shift_image, estimate_image_shift)
+from hyperspy.misc.image_tools import (shift_image, estimate_image_shift,
+                                       find_peaks_max, find_peaks_minmax,
+                                       find_peaks_zaefferer, find_peaks_stat,
+                                       find_peaks_masiel, find_peaks_blob)
 from hyperspy.misc.math_tools import symmetrize, antisymmetrize
 from hyperspy.exceptions import SignalDimensionError, DataDimensionError
 from hyperspy.misc import array_tools
@@ -611,6 +615,63 @@ class Signal2DTools(object):
         self.crop(self.axes_manager.signal_axes[0].index_in_axes_manager,
                   left,
                   right)
+
+
+    def find_peaks2D(self, method='skimage', *args, **kwargs):
+        """Find peaks in a 2D signal/image.
+
+        Function to locate the positive peaks in an image using various, user
+        specified, methods. Returns a structured array containing the peak
+        positions.
+
+        Parameters
+        ---------
+        method : str
+                 Select peak finding algorithm to implement. Available methods
+                 are:
+                     'max' - simple local maximum search
+                     'skimage' - call the peak finder implemented in
+                                 scikit-image which uses a maximum filter
+                     'minmax' - finds peaks by comparing maximum filter results
+                                with minimum filter, calculates centers of mass
+                     'zaefferer' - based on gradient thresholding and refinement
+                                   by local region of interest optimisation
+                     'stat' - statistical approach requiring no free params.
+                     'massiel' - finds peaks in each direction and compares the
+                                 positions where these coincide.
+                     'blob' - a blob finder implemented in scikit-image which
+                              uses the difference of Gaussian matrices approach
+
+        keywords : associated with above methods.
+
+        Returns
+        -------
+        peaks: structured array of shape _navigation_shape_in_array in which
+               each cell contains an array with dimensions (npeaks, 2) that
+               contains the x, y coordinates of peaks found in each image.
+        """
+        arr_shape = (self.axes_manager._navigation_shape_in_array
+                     if self.axes_manager.navigation_size > 0
+                     else [1, ])
+        peaks = np.zeros(arr_shape, dtype=object)
+        for z, indices in zip(self._iterate_signal(),
+                              self.axes_manager._array_indices_generator()):
+            if method == 'skimage':
+                peaks[indices] = peak_local_max(z, *args, **kwargs)
+            if method == 'max':
+                peaks[indices] = find_peaks_max(z, *args, **kwargs)
+            if method == 'minmax':
+                peaks[indices] = find_peaks_minmax(z, *args, **kwargs)
+            if method == 'zaefferer':
+                peaks[indices] = find_peaks_zaefferer(z, *args, **kwargs)
+            if method == 'stat':
+                peaks[indices] = find_peaks_stat(z, *args, **kwargs)
+            if method == 'massiel':
+                peaks[indices] = find_peaks_masiel(z, *args, **kwargs)
+            if method == 'blob':
+                peaks[indices] = find_peaks_blob(z, *args, **kwargs)
+
+        return peaks
 
 
 class Signal1DTools(object):
