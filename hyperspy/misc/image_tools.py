@@ -420,12 +420,12 @@ def find_peaks_stat(z):
 
     def normalize(image):
         """Scales the image to intensities between 0 and 1."""
-        return image/np.max(image)
+        return image / np.max(image)
 
     def _local_stat(image, radius, func):
         """Calculates rolling method 'func' over a circular kernel."""
-        x, y = np.ogrid[-radius:radius+1, -radius:radius+1]
-        kernel = x**2 + y**2 <= radius**2
+        x, y = np.ogrid[-radius:radius + 1, -radius:radius + 1]
+        kernel = x ** 2 + y ** 2 <= radius ** 2
         stat = generic_filter(image, func, footprint=kernel)
         return stat
 
@@ -472,7 +472,7 @@ def find_peaks_stat(z):
         peaks = []
         labeled_points = db.fit_predict(coordinates)
         for peak_label in list(set(labeled_points)):
-            peaks.append(coordinates[labeled_points==peak_label])
+            peaks.append(coordinates[labeled_points == peak_label])
         return peaks
 
     def _peak_find_once(image):
@@ -489,7 +489,7 @@ def find_peaks_stat(z):
         n_peaks = np.infty  # Initial number of peaks
         image, peaks = _peak_find_once(image)  # 4-6
         m_peaks = len(peaks)  # Actual number of peaks
-        while (n_peaks - m_peaks)/n_peaks > 0.05:  # 8
+        while (n_peaks - m_peaks) / n_peaks > 0.05:  # 8
             n_peaks = m_peaks
             image, peaks = _peak_find_once(image)
             m_peaks = len(peaks)
@@ -575,7 +575,7 @@ def find_peaks_masiel(z, subpixel=False, peak_width=10, medfilt_radius=5,
     return peaks
 
 
-def find_peaks_blob(z, threshold=5., **kwargs):
+def find_peaks_blob(z, **kwargs):
     """
     Finds peaks via the difference of Gaussian Matrices method in scikit-image.
 
@@ -601,8 +601,15 @@ def find_peaks_blob(z, threshold=5., **kwargs):
 
     """
     from skimage.feature import blob_dog
-    blobs = blob_dog(z, threshold=threshold, **kwargs)
-    return blobs[:, :2]
+    blobs = blob_dog(z, **kwargs)
+    centers = blobs[:, :2]
+    clean_centers = []
+    for center in centers:
+        if len(np.intersect1d(center, (0,) + z.shape + tuple(
+                        c - 1 for c in z.shape))) > 0:
+            continue
+        clean_centers.append(center)
+    return np.array(clean_centers)
 
 
 def subpix_locate(z, peaks, peak_width, scale=None):
