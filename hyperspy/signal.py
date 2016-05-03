@@ -46,6 +46,7 @@ from hyperspy.axes import AxesManager
 from hyperspy import io
 from hyperspy.drawing import mpl_hie, mpl_hse, mpl_he
 from hyperspy.learn.mva import MVA, LearningResults
+from hyperspy.clustering.clusters import ClusterTools
 import hyperspy.misc.utils
 from hyperspy.misc.utils import DictionaryTreeBrowser
 from hyperspy.drawing import signal as sigdraw
@@ -2800,7 +2801,8 @@ class Signal(FancySlicing,
              MVA,
              MVATools,
              Signal1DTools,
-             Signal2DTools,):
+             Signal2DTools,
+             ClusterTools,):
 
     _record_by = ""
     _signal_type = ""
