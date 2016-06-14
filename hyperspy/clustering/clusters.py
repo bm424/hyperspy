@@ -96,10 +96,7 @@ class ClusterTools:
             The undecomposed points.
 
         """
-        if self._use_learning_results is True:
-            return np.dot(points, self.learning_results.factors.T).T
-        else:
-            return points.T
+        return np.dot(points, self.learning_results.factors.T).T
 
     def undecompose_centers(self):
         """Undo the decomposition on the derived cluster centers.
@@ -169,7 +166,8 @@ class ClusterTools:
         self.fold()
         return partition
 
-    def plot2d(self, indices=(0, 1), size_multiplier=30., size_offset=1.):
+    def plot2d(self, indices=(0, 1), size_multiplier=30., size_offset=1.,
+               ax=None):
         """Creates a plot of the data projected on to two dimensions.
 
         Parameters
@@ -209,9 +207,9 @@ class ClusterTools:
         a = indices[0]
         b = indices[1]
 
-        fig = plt.figure()
+        if ax is None:
+            ax = plt.figure().add_subplot(111)
 
-        ax = fig.add_subplot(111)
         s_list = []
         cmap = plt.get_cmap('Set1')
         colors = [cmap(i) for i in np.linspace(0, 1, len(u))]
@@ -222,7 +220,7 @@ class ClusterTools:
                            c=colors[i])
             ax.scatter(c[i][a], c[i][b], marker='o', s=80, c=colors[i])
             s_list.append(s)
-        plt.title(self.learning_results.cluster_algorithm)
+        plt.title(self.learning_results.cluster_algorithm.__class__.__name__)
         plt.legend(s_list, range(q))
         return ax
 

@@ -289,8 +289,8 @@ class PossibilisticFuzzy(CMeans):
 class ProbabilisticFuzzy(CMeans):
 
     def u(self, d):
-        return d ** (-2. / (self.m - 1)) / np.sum(
-            np.divide(d ** -2., (self.m - 1)), axis=0)
+        return 1/np.sum(np.divide(d, d[:, np.newaxis])**(2/(self.m-1)),
+                        axis=0)
 
     def c(self, x, u):
         return np.dot(self.g(u), x) / np.sum(self.g(u), axis=1)[..., np.newaxis]
