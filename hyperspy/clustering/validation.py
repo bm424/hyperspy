@@ -1,6 +1,5 @@
 import numpy as np
 import abc
-from clustering.clusters import ClusterPattern
 from clustering.distance import Euclidean
 
 

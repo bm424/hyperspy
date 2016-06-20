@@ -617,7 +617,8 @@ class Signal2DTools(object):
                   right)
 
 
-    def find_peaks2D(self, method='skimage', *args, **kwargs):
+    def find_peaks2D(self, method='skimage', *args,
+                     **kwargs):
         """Find peaks in a 2D signal/image.
 
         Function to locate the positive peaks in an image using various, user
@@ -2146,7 +2147,7 @@ class MVATools(object):
                                    calibrate=True,
                                    same_window=None,
                                    comp_label='Decomposition factor',
-                                   per_row=3):
+                                   per_row=3, **kwargs):
         """Plot factors from a decomposition.
 
         Parameters
@@ -2203,7 +2204,7 @@ class MVATools(object):
                                             calibrate=calibrate,
                                             same_window=same_window,
                                             comp_label=comp_label,
-                                            per_row=per_row)
+                                            per_row=per_row, **kwargs)
 
     def plot_bss_factors(self, comp_ids=None, calibrate=True,
                          same_window=None, comp_label='BSS factor',

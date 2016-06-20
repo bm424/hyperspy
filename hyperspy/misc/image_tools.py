@@ -608,7 +608,7 @@ def find_peaks_blob(z, **kwargs):
         if len(np.intersect1d(center, (0,) + z.shape + tuple(
                         c - 1 for c in z.shape))) > 0:
             continue
-        clean_centers.append(center)
+        clean_centers.append(list(center))
     return np.array(clean_centers)
 
 

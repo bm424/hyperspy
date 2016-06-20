@@ -128,3 +128,27 @@ class Canberra(Distance):
 
     def __call__(self, x, y=None, **kwargs):
         return super(Canberra, self).__call__(x, y, metric='canberra', **kwargs)
+
+
+class Diffraction(Distance):
+
+    @staticmethod
+    def d_peaks(peaks1, peaks2, spot_size=3):
+        dists1 = np.min(distance.cdist(peaks1, peaks2), axis=1)
+        dists2 = np.min(distance.cdist(peaks2, peaks1), axis=1)
+        dists1[dists1<spot_size] = 0
+        dists1[dists1>=spot_size] = 1
+        dists2[dists2<spot_size] = 0
+        dists2[dists2>=spot_size] = 1
+        return min((np.mean(dists1), np.mean(dists2)))
+
+    def __call__(self, x, y=None, **kwargs):
+        if y is None:
+            y = x
+        peaks_a = x.flatten()
+        peaks_b = y.flatten()
+        d = np.empty((len(peaks_a), len(peaks_b)))
+        for i, p in enumerate(peaks_a):
+            for j, q in enumerate(peaks_b):
+                d[i, j] = self.d_peaks(p, q, **kwargs)
+        return d
