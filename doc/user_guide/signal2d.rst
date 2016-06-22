@@ -9,7 +9,8 @@ Two dimensional signal registration (alignment)
 
 .. versionadded:: 0.5
 
-The :py:meth:`~._signals.signal2d.Signal2DTools.align2D` method provides advanced image
+The :py:meth:`._signals.signal2d.Signal2DTools.align2D` method provides
+advanced image
 alignment functionality, including subpixel alignment.
 
 .. _image.crop:
@@ -75,6 +76,14 @@ Laplacian/difference of images convolved with Gaussian kernels of various
 standard deviations. Both are relatively rapid and very robust, given
 appropriate parameters.
 
+Interactive peak finding
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: python
+
+    >>> s.find_peaks2D_interactive()
+
+Most of the available
 
 References
 ----------
