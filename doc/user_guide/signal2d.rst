@@ -9,7 +9,8 @@ Two dimensional signal registration (alignment)
 
 .. versionadded:: 0.5
 
-The :py:meth:`hyperspy._signals.signal2d.Signal2DTools.align2D` method provides
+The :py:meth:`~.hyperspy._signals.signal2d.Signal2DTools.align2D` method
+provides
 advanced image
 alignment functionality, including subpixel alignment.
 
