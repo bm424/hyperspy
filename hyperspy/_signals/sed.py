@@ -26,7 +26,7 @@ from skimage import morphology, filters
 from skimage.morphology import square
 
 
-from hyperspy._signals.image import Image
+from hyperspy._signals.signal2d import Signal2D
 from hyperspy.decorators import only_interactive
 from hyperspy.gui.sed import SEDParametersUI
 from hyperspy.defaults_parser import preferences
