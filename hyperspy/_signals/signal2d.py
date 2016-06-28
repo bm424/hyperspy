@@ -27,6 +27,7 @@ from hyperspy.defaults_parser import preferences
 from hyperspy.external.progressbar import progressbar
 from hyperspy.misc.math_tools import symmetrize, antisymmetrize
 from hyperspy.signal import BaseSignal
+from hyperspy.clustering.clusters import ClusterTools
 
 
 def shift_image(im, shift, interpolation_order=1, fill_value=np.nan):
@@ -524,7 +525,8 @@ class Signal2DTools(object):
 
 
 class Signal2D(BaseSignal,
-               Signal2DTools,):
+               Signal2DTools,
+               ClusterTools):
 
     """
     """

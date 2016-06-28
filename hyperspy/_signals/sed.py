@@ -56,11 +56,11 @@ def _affine_transformation(self, z, order=3, **kwargs):
     return trans
 
 
-class SEDPattern(Image):
+class SEDPattern(Signal2D):
     _signal_type = "SED_Pattern"
 
     def __init__(self, *args, **kwards):
-        Image.__init__(self, *args, **kwards)
+        Signal2D.__init__(self, *args, **kwards)
         # Attributes defaults
         if 'Acquisition_instrument.TEM' not in self.metadata:
             if 'Acquisition_instrument.SEM' in self.metadata:
@@ -482,7 +482,7 @@ class SEDPattern(Image):
             signal_mask = self.direct_beam_mask(signal_mask)
         if isinstance(navigation_mask, float):
             navigation_mask = self.vacuum_mask(navigation_mask, threshold).data
-        super(Image, self).decomposition(
+        super(Signal2D, self).decomposition(
             normalize_poissonian_noise=normalize_poissonian_noise,
             signal_mask=signal_mask, navigation_mask=navigation_mask,
             *args, **kwargs)
