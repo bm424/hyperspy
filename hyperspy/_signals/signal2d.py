@@ -16,11 +16,14 @@
 # You should have received a copy of the GNU General Public License
 # along with  HyperSpy.  If not, see <http://www.gnu.org/licenses/>.
 
+import copy
 import numpy as np
 import numpy.ma as ma
 import scipy as sp
 from scipy.fftpack import fftn, ifftn
+from skimage.feature import peak_local_max
 import matplotlib.pyplot as plt
+import scipy.ndimage as ndi
 import warnings
 
 from hyperspy.defaults_parser import preferences
@@ -98,7 +101,7 @@ def fft_correlation(in1, in2, normalize=False):
 
 def estimate_image_shift(ref, image, roi=None, sobel=True,
                          medfilter=True, hanning=True, plot=False,
-                         dtype='float', normalize_corr=False,):
+                         dtype='float', normalize_corr=False, ):
     """Estimate the shift in a image using phase correlation
 
     This method can only estimate the shift by comparing
@@ -170,7 +173,7 @@ def estimate_image_shift(ref, image, roi=None, sobel=True,
                               phase_correlation.shape)
     threshold = (phase_correlation.shape[0] / 2 - 1,
                  phase_correlation.shape[1] / 2 - 1)
-    shift0 = argmax[0] if argmax[0] < threshold[0] else  \
+    shift0 = argmax[0] if argmax[0] < threshold[0] else \
         argmax[0] - phase_correlation.shape[0]
     shift1 = argmax[1] if argmax[1] < threshold[1] else \
         argmax[1] - phase_correlation.shape[1]
@@ -194,8 +197,22 @@ def estimate_image_shift(ref, image, roi=None, sobel=True,
     return -np.array((shift0, shift1)), max_val
 
 
-class Signal2DTools(object):
+def subpix_locate(z, peaks, peak_width, scale=None):
+    top = left = peak_width / 2 + 1
+    centers = np.array(peaks, dtype=np.float32)
+    for i in range(peaks.shape[0]):
+        pk = peaks[i]
+        center = np.array(
+            ndi.measurements.center_of_mass(z[(pk[0] - left):(pk[0] + left),
+                                            (pk[1] - top):(pk[1] + top)]))
+        center = center[0] - peak_width / 2, center[1] - peak_width / 2
+        centers[i] = np.array([pk[0] + center[0], pk[1] + center[1]])
+    if scale:
+        centers = centers * scale
+    return centers
 
+
+class Signal2DTools(object):
     def estimate_shift2D(self,
                          reference='current',
                          correlation_threshold=None,
@@ -522,6 +539,793 @@ class Signal2DTools(object):
         self.crop(self.axes_manager.signal_axes[0].index_in_axes_manager,
                   left,
                   right)
+
+    def find_peaks2D(self, method='skimage', *args, **kwargs):
+        """Find peaks in a 2D signal/image.
+        Function to locate the positive peaks in an image using various, user
+        specified, methods. Returns a structured array containing the peak
+        positions.
+        Parameters
+        ---------
+        method : str
+                 Select peak finding algorithm to implement. Available methods
+                 are:
+                     'max' - simple local maximum search
+                     'skimage' - call the peak finder implemented in
+                                 scikit-image which uses a maximum filter
+                     'minmax' - finds peaks by comparing maximum filter results
+                                with minimum filter, calculates centers of mass
+                     'zaefferer' - based on gradient thresholding and refinement
+                                   by local region of interest optimisation
+                     'stat' - statistical approach requiring no free params.
+                     'massiel' - finds peaks in each direction and compares the
+                                 positions where these coincide.
+                     'laplacian_of_gaussians' - a blob finder implemented in
+                                                `scikit-image` which uses the
+                                                laplacian of Gaussian matrices
+                                                approach.
+                     'difference_of_gaussians' - a blob finder implemented in
+                                                 `scikit-image` which uses
+                                                 the difference of Gaussian
+                                                 matrices approach.
+        *args : associated with above methods
+        **kwargs : associated with above methods.
+        Returns
+        -------
+        peaks: structured array of shape _navigation_shape_in_array in which
+               each cell contains an array with dimensions (npeaks, 2) that
+               contains the x, y coordinates of peaks found in each image.
+        """
+        arr_shape = (self.axes_manager._navigation_shape_in_array
+                     if self.axes_manager.navigation_size > 0
+                     else [1, ])
+        peaks = np.zeros(arr_shape, dtype=object)
+        for z, indices in zip(self._iterate_signal(),
+                              self.axes_manager._array_indices_generator()):
+            if method == 'skimage':
+                peaks[indices] = peak_local_max(z, *args, **kwargs)
+            elif method == 'max':
+                peaks[indices] = Max().find_peaks(z, **kwargs)
+            elif method == 'minmax':
+                peaks[indices] = MinMax().find_peaks(z, **kwargs)
+            elif method == 'zaefferer':
+                peaks[indices] = Zaefferer().find_peaks(z, **kwargs)
+            elif method == 'stat':
+                peaks[indices] = Stat().find_peaks(z, **kwargs)
+            elif method == 'laplacian_of_gaussians':
+                peaks[indices] = LaplacianOfGaussians().find_peaks(z, **kwargs)
+            elif method == 'difference_of_gaussians':
+                peaks[indices] = DifferenceOfGaussians().find_peaks(z, **kwargs)
+            else:
+                raise NotImplementedError("The method `{}` is not implemented. "
+                                          "See documentation for available "
+                                          "implementations.".format(method))
+
+        return peaks
+
+    def find_peaks2D_interactive(self):
+        """
+        Find peaks using an interactive tool.
+
+        Notes
+        -----
+        Requires `ipywidgets` and `traitlets` to be installed.
+
+        """
+        peakfinder = PeakFinder2D()
+        peakfinder.interactive(self)
+        return peakfinder.current_method
+
+
+class PeakFinder2D(object):
+
+    params = []
+    values = []
+    nopeaks = np.array([[np.nan, np.nan]])
+
+    def __init__(self):
+
+        self.signal = None
+        self.indices = None
+        self.ax = None
+        self.param_container = None
+        self.methods = {c.__name__: c() for c in
+                        self.__class__.__subclasses__()}
+        self.method = "DifferenceOfGaussians"
+        for param, default in zip(self.params, self.values):
+            setattr(self, param, default)
+
+    def interactive(self, signal):
+        self.signal = signal
+        self.indices = self.signal.axes_manager.indices
+        self.plot()
+        self.create_choices_widget()
+        self.create_navigator()
+        self.create_param_widgets()
+
+    @property
+    def current_method(self):
+        return self.methods[self.method]
+
+    def get_default_params(self, **kwargs):
+        for param in self.params:
+            if param not in kwargs:
+                kwargs[param] = getattr(self, param)
+        return kwargs
+
+    def create_navigator(self):
+        from IPython.display import display
+        import ipywidgets as ipyw
+        container = ipyw.HBox()
+        if self.signal.axes_manager.navigation_dimension == 2:
+            container = self.create_navigator_2d()
+        elif self.signal.axes_manager.navigation_dimension == 1:
+            container = self.create_navigator_1d()
+        elif self.signal.axes_manager.navigation_dimension == 0:
+            container = HBox()
+        display(container)
+
+    def create_navigator_1d(self):
+        import ipywidgets as ipyw
+        x_min, x_max = 0, self.signal.axes_manager.navigation_size - 1
+        x_text = ipyw.BoundedIntText(value=self.indices[0],
+                                description="Coordinate", min=x_min,
+                                max=x_max, layout=ipyw.Layout(flex='0 1 auto',
+                                                         width='auto'))
+        randomize = ipyw.Button(description="Randomize",
+                           layout=ipyw.Layout(flex='0 1 auto', width='auto'))
+        container = ipyw.HBox((x_text, randomize))
+
+        def on_index_change(change):
+            self.indices = (x_text.value,)
+            self.replot_image()
+
+        def on_randomize(change):
+            from random import randint
+            x = randint(x_min, x_max)
+            x_text.value = x
+
+        x_text.observe(on_index_change, names='value')
+        randomize.on_click(on_randomize)
+        return container
+
+    def create_navigator_2d(self):
+        import ipywidgets as ipyw
+        x_min, y_min = 0, 0
+        x_max, y_max = self.signal.axes_manager.navigation_shape
+        x_max -= 1
+        y_max -= 1
+        x_text = ipyw.BoundedIntText(value=self.indices[0], description="x",
+                                     min=x_min, max=x_max,
+                                     layout=ipyw.Layout(flex='0 1 auto',
+                                                   width='auto'))
+        y_text = ipyw.BoundedIntText(value=self.indices[1], description="y",
+                                     min=y_min, max=y_max,
+                                     layout=ipyw.Layout(flex='0 1 auto',
+                                                   width='auto'))
+        randomize = ipyw.Button(description="Randomize",
+                                layout=ipyw.Layout(flex='0 1 auto', width='auto'))
+        container = ipyw.HBox((x_text, y_text, randomize))
+
+        def on_index_change(change):
+            self.indices = (x_text.value, y_text.value)
+            self.replot_image()
+
+        def on_randomize(change):
+            from random import randint
+            x = randint(x_min, x_max)
+            y = randint(y_min, y_max)
+            x_text.value = x
+            y_text.value = y
+
+        x_text.observe(on_index_change, names='value')
+        y_text.observe(on_index_change, names='value')
+        randomize.on_click(on_randomize)
+        return container
+
+    def create_choices_widget(self):
+        from IPython.display import display
+        from ipywidgets import Dropdown
+        dropdown = Dropdown(
+            options=list(self.methods.keys()),
+            value=self.method,
+            description="Method",
+        )
+
+        def on_method_change(change):
+            self.method = dropdown.value
+            self.create_param_widgets()
+            self.replot_peaks()
+
+        dropdown.observe(on_method_change, names='value')
+        display(dropdown)
+
+    def create_param_widgets(self):
+        from IPython.display import display
+        from ipywidgets import VBox
+        containers = []
+        if self.param_container:
+            self.param_container.close()
+        for param in self.current_method.params:
+            container = self.create_param_widget(param,
+                                                 getattr(self.current_method,
+                                                         param))
+            containers.append(container)
+        self.param_container = VBox(containers, description="Parameters")
+        display(self.param_container)
+
+    def create_param_widget(self, param, value):
+        from ipywidgets import Layout, HBox
+        children = (HBox(),)
+        if isinstance(value, bool):
+            from ipywidgets import Label, ToggleButton
+            p = Label(value=param, layout=Layout(width='10%'))
+            t = ToggleButton(description=str(value), value=value)
+
+            def on_bool_change(change):
+                t.description = str(change['new'])
+                setattr(self.current_method, param, change['new'])
+                self.replot_peaks()
+
+            t.observe(on_bool_change, names='value')
+
+            children = (p, t)
+
+        elif isinstance(value, float):
+            from ipywidgets import FloatSlider, FloatText, BoundedFloatText, \
+                Label
+            from traitlets import link
+            p = Label(value=param, layout=Layout(flex='0 1 auto', width='10%'))
+            b = BoundedFloatText(value=0, min=1e-10,
+                                 layout=Layout(flex='0 1 auto', width='10%'),
+                                 font_weight='bold')
+            a = FloatText(value=2 * value,
+                          layout=Layout(flex='0 1 auto', width='10%'))
+            f = FloatSlider(value=value, min=b.value, max=a.value,
+                            step=np.abs(a.value - b.value) * 0.01,
+                            layout=Layout(flex='1 1 auto', width='60%'))
+            l = FloatText(value=f.value,
+                          layout=Layout(flex='0 1 auto', width='10%'),
+                          disabled=True)
+            link((f, 'value'), (l, 'value'))
+
+            def on_min_change(change):
+                if f.max > change['new']:
+                    f.min = change['new']
+                    f.step = np.abs(f.max - f.min) * 0.01
+
+            def on_max_change(change):
+                if f.min < change['new']:
+                    f.max = change['new']
+                    f.step = np.abs(f.max - f.min) * 0.01
+
+            def on_param_change(change):
+                setattr(self.current_method, param, change['new'])
+                self.replot_peaks()
+
+            b.observe(on_min_change, names='value')
+            f.observe(on_param_change, names='value')
+            a.observe(on_max_change, names='value')
+            children = (p, l, b, f, a)
+
+        elif isinstance(value, int):
+            from ipywidgets import IntSlider, IntText, BoundedIntText, \
+                Label
+            from traitlets import link
+            p = Label(value=param, layout=Layout(flex='0 1 auto', width='10%'))
+            b = BoundedIntText(value=0, min=1e-10,
+                               layout=Layout(flex='0 1 auto', width='10%'),
+                               font_weight='bold')
+            a = IntText(value=2 * value,
+                        layout=Layout(flex='0 1 auto', width='10%'))
+            f = IntSlider(value=value, min=b.value, max=a.value,
+                          step=np.abs(a.value - b.value) * 0.01,
+                          layout=Layout(flex='1 1 auto', width='60%'))
+            l = IntText(value=f.value,
+                        layout=Layout(flex='0 1 auto', width='10%'),
+                        disabled=True)
+            link((f, 'value'), (l, 'value'))
+
+            def on_min_change(change):
+                if f.max > change['new']:
+                    f.min = change['new']
+                    f.step = np.abs(f.max - f.min) * 0.01
+
+            def on_max_change(change):
+                if f.min < change['new']:
+                    f.max = change['new']
+                    f.step = np.abs(f.max - f.min) * 0.01
+
+            def on_param_change(change):
+                setattr(self.current_method, param, change['new'])
+                self.replot_peaks()
+
+            b.observe(on_min_change, names='value')
+            f.observe(on_param_change, names='value')
+            a.observe(on_max_change, names='value')
+            children = (p, l, b, f, a)
+        container = HBox(children)
+        return container
+
+    def get_data(self):
+        return self.signal.inav[self.indices].data
+
+    def get_peaks(self):
+        peaks = self.current_method.find_peaks(self.get_data())
+        return self.clean_peaks(peaks)
+
+    def clean_peaks(self, peaks):
+        if len(peaks) == 0:
+            return self.nopeaks
+        else:
+            return peaks
+
+    def plot(self):
+        self.plot_image()
+        self.plot_peaks()
+
+    def plot_image(self):
+        if self.ax is None:
+            self.ax = plt.figure().add_subplot(111)
+        z = self.get_data()
+        self.image = self.ax.imshow(np.rot90(np.fliplr(z)))
+        self.ax.set_xlim(0, z.shape[0])
+        self.ax.set_ylim(0, z.shape[1])
+        plt.show()
+
+    def replot_image(self):
+        z = self.get_data()
+        self.image.set_data(np.rot90(np.fliplr(z)))
+        self.replot_peaks()
+        plt.draw()
+
+    def plot_peaks(self):
+        peaks = self.get_peaks()
+        self.pts, = self.ax.plot(peaks[:, 0], peaks[:, 1], 'o')
+        plt.show()
+
+    def replot_peaks(self):
+        peaks = self.get_peaks()
+        self.pts.set_xdata(peaks[:, 0])
+        self.pts.set_ydata(peaks[:, 1])
+        plt.draw()
+
+
+class MinMax(PeakFinder2D):
+    params = [
+        "separation",
+        "threshold",
+        "interpolation_order",
+    ]
+
+    values = [
+        5.,
+        10.,
+        3,
+    ]
+
+    def find_peaks(self, z, **kwargs):
+        """
+        Method to locate the positive peaks in an image by comparing maximum
+        and minimum filtered images.
+        Parameters
+        ----------
+        z: ndarray
+        **kwargs :
+            separation: expected distance between peaks
+            threshold:
+        Returns
+        -------
+        peaks: array with dimensions (npeaks, 2) that contains the x, y coordinates
+               for each peak found in the image.
+        """
+        kwargs = self.get_default_params(**kwargs)
+        separation = kwargs['separation']
+        threshold = kwargs['threshold']
+        data_max = ndi.filters.maximum_filter(z, separation)
+        maxima = (z == data_max)
+        data_min = ndi.filters.minimum_filter(z, separation)
+        diff = ((data_max - data_min) > threshold)
+        maxima[diff == 0] = 0
+        labeled, num_objects = ndi.label(maxima)
+        peaks = np.array(
+            ndi.center_of_mass(z, labeled, range(1, num_objects + 1)))
+
+        return self.clean_peaks(peaks)
+
+
+class Max(PeakFinder2D):
+    params = [
+        "alpha",
+        "size",
+    ]
+
+    values = [
+        3.,
+        10,
+    ]
+
+    def find_peaks(self, z, **kwargs):
+        """
+        Method to locate positive peaks in an image by simple local maximum
+        searching.
+        """
+        # Manage input
+        kwargs = self.get_default_params(**kwargs)
+        alpha = kwargs['alpha']
+        size = kwargs['size']
+
+        # preallocate lots of peak storage
+        k_arr = np.zeros((10000, 2))
+        # copy image
+        image_temp = copy.deepcopy(z)
+        peak_ct = 0
+        # calculate standard deviation of image for thresholding
+        sigma = np.std(z)
+        while True:
+            k = np.argmax(image_temp)
+            j, i = np.unravel_index(k, image_temp.shape)
+            if image_temp[j, i] >= alpha * sigma:
+                k_arr[peak_ct] = [j, i]
+                # masks peaks already identified.
+                x = np.arange(i - size, i + size)
+                y = np.arange(j - size, j + size)
+                xv, yv = np.meshgrid(x, y)
+                # clip to handle peaks near image edge
+                image_temp[yv.clip(0, image_temp.shape[0] - 1),
+                           xv.clip(0, image_temp.shape[1] - 1)] = 0
+                peak_ct += 1
+            else:
+                break
+        # trim array to have shape (number of peaks, 2)
+        peaks = k_arr[:peak_ct]
+        return self.clean_peaks(peaks)
+
+
+class Zaefferer(PeakFinder2D):
+    params = [
+        "grad_threshold",
+        "window_size",
+        "distance_cutoff",
+    ]
+
+    values = [
+        0.1,
+        40,
+        50,
+    ]
+
+    def find_peaks(self, z, **kwargs):
+        """
+        Method to locate positive peaks in an image based on gradient
+        thresholding and subsequent refinement within masked regions.
+        Parameters
+        ----------
+        z : ndarray
+            Matrix of image intensities.
+        **kwargs :
+            grad_threshold : float
+                The minimum gradient required to begin a peak search.
+            window_size : int
+                The size of the square window within which a peak search is
+                conducted. If odd, will round down to even.
+            distance_cutoff : float
+                The maximum distance a peak may be from the initial
+                high-gradient point.
+        Returns
+        -------
+        peaks : numpy.ndarray
+            (n_peaks, 2)
+            Peak pixel coordinates.
+        Notes
+        -----
+        Implemented as described in Zaefferer "New developments of computer-aided
+        crystallographic analysis in transmission electron microscopy" J.
+        Ap. Cryst.
+        This version by Ben Martineau (2016)
+        """
+
+        def box(x, y, window_size, x_max, y_max):
+            """Produces a list of coordinates in the box about (x, y)."""
+            a = int(window_size / 2)
+            x_min = max(0, x - a)
+            x_max = min(x_max, x + a)
+            y_min = max(0, y - a)
+            y_max = min(y_max, y + a)
+            return np.array(
+                np.meshgrid(range(x_min, x_max), range(y_min, y_max))).reshape(
+                2,
+                -1).T
+
+        def get_max(image, box):
+            """Finds the coordinates of the maximum of 'image' in 'box'."""
+            vals = image[box[:, 0], box[:, 1]]
+            max_position = box[np.argmax(vals)]
+            return max_position
+
+        def distance(x, y):
+            """Calculates the distance between two points."""
+            v = x - y
+            return np.sqrt(np.sum(np.square(v)))
+
+        def gradient(image):
+            """Calculates the square of the 2-d partial gradient.
+
+            Parameters
+            ----------
+            image : ndarray
+
+            Returns
+            -------
+            ndarray
+
+            """
+            gradient_of_image = np.gradient(image)
+            gradient_of_image = gradient_of_image[0] ** 2 + gradient_of_image[
+                                                                1] ** 2
+            return gradient_of_image
+
+        # Input cleanup
+        kwargs = self.get_default_params(**kwargs)
+        window_size = kwargs['window_size']
+        grad_threshold = kwargs['grad_threshold']
+        distance_cutoff = kwargs['distance_cutoff']
+
+        # Generate an ordered list of matrix coordinates.
+        if len(z.shape) != 2:
+            raise ValueError("'z' should be a 2-d image matrix.")
+        z = z / np.max(z)
+        coordinates = np.indices(z.data.shape).reshape(2, -1).T
+        # Calculate the gradient at every point.
+        image_gradient = gradient(z)
+        # Boolean matrix of high-gradient points.
+        gradient_is_above_threshold = image_gradient >= grad_threshold
+        peaks = []
+        for coordinate in coordinates[gradient_is_above_threshold.flatten()]:
+            # Iterate over coordinates where the gradient is high enough.
+            b = box(coordinate[0], coordinate[1], window_size, z.shape[0],
+                    z.shape[1])
+            p_old = np.array([0, 0])
+            p_new = get_max(z, b)
+            while np.all(p_old != p_new):
+                p_old = p_new
+                b = box(p_old[0], p_old[1], window_size, z.shape[0], z.shape[1])
+                p_new = get_max(z, b)
+            if distance(coordinate, p_new) <= distance_cutoff:
+                peaks.append(tuple(p_new))
+        peaks = np.array([np.array(p) for p in set(peaks)])
+        return self.clean_peaks(peaks)
+
+
+class Stat(PeakFinder2D):
+    params = []  # Consider allowing some user-defined parameters
+    values = []
+
+    def find_peaks(self, z, **kwargs):
+        """
+        Method to locate positive peaks in an image based on statistical refinement
+        and difference with respect to mean intensity.
+        Parameters
+        ----------
+        z : ndarray
+            Array of image intensities.
+        **kwargs : None
+        Returns
+        -------
+        ndarray
+            (n_peaks, 2)
+            Array of peak coordinates.
+        Notes
+        -----
+        Implemented as described in the PhD thesis of Thomas White (2009) the
+        algorithm was developed by Gordon Ball during a summer project in
+        Cambridge.
+        This version by Ben Martineau (2016), with minor modifications to the
+        original where methods were ambiguous or unclear.
+        """
+        from scipy.ndimage.filters import generic_filter
+        from scipy.ndimage.filters import uniform_filter
+        from sklearn.cluster import DBSCAN
+
+        kwargs = self.get_default_params(**kwargs)
+
+        def normalize(image):
+            """Scales the image to intensities between 0 and 1."""
+            return image / np.max(image)
+
+        def _local_stat(image, radius, func):
+            """Calculates rolling method 'func' over a circular kernel."""
+            x, y = np.ogrid[-radius:radius + 1, -radius:radius + 1]
+            kernel = x ** 2 + y ** 2 <= radius ** 2
+            stat = generic_filter(image, func, footprint=kernel)
+            return stat
+
+        def local_mean(image, radius):
+            """Calculates rolling mean over a circular kernel."""
+            return _local_stat(image, radius, np.mean)
+
+        def local_std(image, radius):
+            """Calculates rolling standard deviation over a circular kernel."""
+            return _local_stat(image, radius, np.std)
+
+        def single_pixel_desensitize(image):
+            """Reduces single-pixel anomalies by nearest-neighbor smoothing."""
+            kernel = np.array([[0.5, 1, 0.5], [1, 1, 1], [0.5, 1, 0.5]])
+            smoothed_image = generic_filter(image, np.mean, footprint=kernel)
+            return smoothed_image
+
+        def stat_binarise(image):
+            """Peaks more than one standard deviation from the mean set to one."""
+            image_rolling_mean = local_mean(image, 10)
+            image_rolling_std = local_std(image, 10)
+            image = single_pixel_desensitize(image)
+            binarised_image = np.zeros(image.shape)
+            binarised_image[image > image_rolling_mean + image_rolling_std] = 1
+            return binarised_image
+
+        def smooth(image):
+            """Image convolved twice using a uniform 3x3 kernel."""
+            image = uniform_filter(image, size=3)
+            image = uniform_filter(image, size=3)
+            return image
+
+        def half_binarise(image):
+            """Image binarised about values of one-half intensity."""
+            binarised_image = np.zeros(image.shape)
+            binarised_image[image > 0.5] = 1
+            return binarised_image
+
+        def separate_peaks(binarised_image):
+            """Identify adjacent 'on' coordinates via DBSCAN."""
+            bi = binarised_image.astype('bool')
+            coordinates = np.indices(bi.data.shape).reshape(2, -1).T[
+                bi.flatten()]
+            db = DBSCAN(2, 3)
+            peaks = []
+            labeled_points = db.fit_predict(coordinates)
+            for peak_label in list(set(labeled_points)):
+                peaks.append(coordinates[labeled_points == peak_label])
+            return peaks
+
+        def _peak_find_once(image):
+            """Smooth, binarise, and find peaks according to main algorithm."""
+            image = smooth(image)
+            image = half_binarise(image)
+            peaks = separate_peaks(image)
+            return image, peaks
+
+        def stat_peak_finder(image):
+            """Find peaks in diffraction image. Algorithm stages in comments."""
+            image = normalize(image)  # 1
+            image = stat_binarise(image)  # 2, 3
+            n_peaks = np.infty  # Initial number of peaks
+            image, peaks = _peak_find_once(image)  # 4-6
+            m_peaks = len(peaks)  # Actual number of peaks
+            while (n_peaks - m_peaks) / n_peaks > 0.05:  # 8
+                n_peaks = m_peaks
+                image, peaks = _peak_find_once(image)
+                m_peaks = len(peaks)
+            peak_centers = np.array(
+                [np.mean(peak, axis=0) for peak in peaks])  # 7
+            return peak_centers
+
+        return self.clean_peaks(stat_peak_finder(z))
+
+
+class DifferenceOfGaussians(PeakFinder2D):
+    params = [
+        "min_sigma",
+        "max_sigma",
+        "sigma_ratio",
+        "threshold",
+        "overlap",
+    ]
+
+    values = [
+        1.,
+        50.,
+        1.6,
+        0.2,
+        0.5,
+    ]
+
+    def find_peaks(self, z, **kwargs):
+        """
+        Finds peaks via the difference of Gaussian Matrices method from
+        `scikit-image`.
+
+        Parameters
+        ----------
+        normalize: bool
+            If `True`, linearly scales intensities to between 0 and 1,
+            which makes it easier to determine parameters.
+        z : ndarray
+            2-d array of intensities
+        kwargs : Additional parameters to be passed to the algorithm. See `blob_dog`
+            documentation for details:
+            http://scikit-image.org/docs/dev/api/skimage.feature.html#blob-dog
+
+        Returns
+        -------
+        ndarray
+            (n_peaks, 2)
+            Array of peak coordinates.
+
+        Notes
+        -----
+        While highly effective at finding even very faint peaks, this method is
+            sensitive to fluctuations in intensity near the edges of the image.
+
+        """
+        kwargs = self.get_default_params(**kwargs)
+        from skimage.feature import blob_dog
+        if True:
+            z = z / np.max(z)
+        blobs = blob_dog(z, **kwargs)
+        try:
+            centers = blobs[:, :2]
+        except IndexError:
+            return self.nopeaks
+        clean_centers = []
+        for center in centers:
+            if len(np.intersect1d(center, (0,) + z.shape + tuple(
+                            c - 1 for c in z.shape))) > 0:
+                continue
+            clean_centers.append(center)
+        return np.array(clean_centers)
+
+
+class LaplacianOfGaussians(PeakFinder2D):
+    params = [
+        "min_sigma",
+        "max_sigma",
+        "num_sigma",
+        "threshold",
+        "overlap",
+        "log_scale",
+    ]
+
+    values = [
+        1.,
+        50.,
+        10.,
+        0.2,
+        0.5,
+        False,
+    ]
+
+    def find_peaks(self, z, **kwargs):
+        """
+        Finds peaks via the Laplacian of Gaussian Matrices method from
+        `scikit-image`.
+
+        Parameters
+        ----------
+        z : ndarray
+            Array of image intensities.
+        kwargs : Additional parameters to be passed to the algorithm. See
+            `blob_log` documentation for details:
+            http://scikit-image.org/docs/dev/api/skimage.feature.html#blob-log
+
+        Returns
+        -------
+        ndarray
+            (n_peaks, 2)
+            Array of peak coordinates.
+
+        """
+        kwargs = self.get_default_params(**kwargs)
+        from skimage.feature import blob_log
+        if True:
+            z = z / np.max(z)
+        blobs = blob_log(z, **kwargs)
+        # Attempt to return only peak positions. If no peaks exist, return an
+        # empty array.
+        try:
+            centers = blobs[:, :2]
+        except IndexError:
+            return self.nopeaks
+        return centers
 
 
 class Signal2D(BaseSignal,
