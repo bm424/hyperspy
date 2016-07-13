@@ -23,6 +23,7 @@ import scipy as sp
 import warnings
 from scipy.fftpack import fftn, ifftn
 import copy
+import scipy.ndimage as ndi
 
 from hyperspy.defaults_parser import preferences
 from hyperspy.external.progressbar import progressbar
@@ -649,9 +650,7 @@ class Signal2D(BaseSignal, ClusterTools, CommonSignal2D):
         peaks = np.zeros(arr_shape, dtype=object)
         for z, indices in zip(self._iterate_signal(),
                               self.axes_manager._array_indices_generator()):
-            if method == 'skimage':
-                peaks[indices] = peak_local_max(z, *args, **kwargs)
-            elif method == 'max':
+            if method == 'max':
                 peaks[indices] = find_peaks_max(z, **kwargs)
             elif method == 'minmax':
                 peaks[indices] = find_peaks_minmax(z, **kwargs)
