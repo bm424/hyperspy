@@ -738,7 +738,8 @@ class MVATools(object):
                                    calibrate=True,
                                    same_window=None,
                                    comp_label='Decomposition factor',
-                                   per_row=3):
+                                   per_row=3,
+                                   cmap=plt.cm.gray):
         """Plot factors from a decomposition.
 
         Parameters
@@ -795,7 +796,8 @@ class MVATools(object):
                                             calibrate=calibrate,
                                             same_window=same_window,
                                             comp_label=comp_label,
-                                            per_row=per_row)
+                                            per_row=per_row,
+                                            cmap=cmap)
 
     def plot_bss_factors(self, comp_ids=None, calibrate=True,
                          same_window=None, comp_label='BSS factor',
@@ -1396,7 +1398,8 @@ class MVATools(object):
                                    factors_navigator="auto",
                                    loadings_navigator="auto",
                                    factors_dim=2,
-                                   loadings_dim=2):
+                                   loadings_dim=2,
+                                   cmap=plt.cm.gray):
         """Plot the decompostion factors and loadings.
 
         Unlike `plot_factors` and `plot_loadings`, this method displays
@@ -1430,8 +1433,8 @@ class MVATools(object):
             loadings.axes_manager.set_signal_dimension(loadings_dim)
         if factors.axes_manager.signal_dimension > 2:
             factors.axes_manager.set_signal_dimension(factors_dim)
-        loadings.plot(navigator=loadings_navigator)
-        factors.plot(navigator=factors_navigator)
+        loadings.plot(navigator=loadings_navigator, cmap=cmap)
+        factors.plot(navigator=factors_navigator, cmap=cmap)
 
 
 class SpecialSlicersSignal(SpecialSlicers):
