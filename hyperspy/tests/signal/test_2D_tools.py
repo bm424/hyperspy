@@ -16,9 +16,11 @@
 # along with HyperSpy. If not, see <http://www.gnu.org/licenses/>.
 
 
+import sys
 from unittest import mock
-
+import nose
 import nose.tools as nt
+import numpy.testing as npt
 import numpy as np
 import scipy as sp
 from scipy.misc import face, ascent
@@ -124,6 +126,11 @@ class TestAlignTools:
         d_al = s.data[:, ds[0]:-ds[0], ds[1]:-ds[1]]
         nt.assert_true(np.all(d_al == self.aligned))
 
+
+def test_add_ramp():
+    s = hs.signals.Signal2D(np.indices((3, 3)).sum(axis=0) + 4)
+    s.add_ramp(-1, -1, -4)
+    npt.assert_almost_equal(s.data, 0)
 
 class TestFindPeaks2D:
 
@@ -246,9 +253,6 @@ class TestFindPeaks2DInteractive:
     def test_current_method_property(self):
         nt.assert_in(self.peakfinder.current_method.__class__, self.methods)
 
-
-
-
-
-
-
+if __name__ == '__main__':
+    import nose
+    nose.run(defaultTest=__name__)
