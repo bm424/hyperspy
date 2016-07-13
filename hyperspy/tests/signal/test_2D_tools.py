@@ -18,6 +18,7 @@
 
 import sys
 from unittest import mock
+
 import nose
 import nose.tools as nt
 import numpy.testing as npt
@@ -131,6 +132,7 @@ def test_add_ramp():
     s = hs.signals.Signal2D(np.indices((3, 3)).sum(axis=0) + 4)
     s.add_ramp(-1, -1, -4)
     npt.assert_almost_equal(s.data, 0)
+
 
 class TestFindPeaks2D:
 
