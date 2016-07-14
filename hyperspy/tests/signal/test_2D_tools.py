@@ -203,7 +203,7 @@ class TestFindPeaks2D:
     def peaks_are_coordinates(self, method, dataset):
         peaks = dataset.find_peaks2D(method=method)
         peak_shapes = np.array([peak.shape for peak in peaks.flatten()])
-        nt.assert_true(np.all(peak_shapes[:, 1] == 2))
+        nt.assert_true(np.all(peak_shapes[:, 1] == 2) or np.all(peak_shapes[:, 2] == 3))
 
     def gets_right_answer(self, method, dataset, answer):
         peaks = dataset.find_peaks2D()

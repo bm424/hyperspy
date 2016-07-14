@@ -992,6 +992,7 @@ def find_peaks_dog(z, min_sigma=1., max_sigma=50, sigma_ratio=1.6,
                      overlap=overlap)
     try:
         centers = blobs[:, :2]
+        intensities = blobs[:, 2]
     except IndexError:
         return NO_PEAKS
     clean_centers = []
@@ -1000,7 +1001,7 @@ def find_peaks_dog(z, min_sigma=1., max_sigma=50, sigma_ratio=1.6,
                         c - 1 for c in z.shape))) > 0:
             continue
         clean_centers.append(center)
-    return np.array(clean_centers)
+    return np.array(clean_centers), intensities
 
 
 def find_peaks_log(z, min_sigma=1, max_sigma=50., num_sigma=10.,
@@ -1034,6 +1035,7 @@ def find_peaks_log(z, min_sigma=1, max_sigma=50., num_sigma=10.,
     # empty array.
     try:
         centers = blobs[:, :2]
+        intensities = blobs[:, 2]
     except IndexError:
         return NO_PEAKS
-    return centers
+    return centers, intensities
