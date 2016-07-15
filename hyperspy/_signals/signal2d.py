@@ -976,8 +976,9 @@ def find_peaks_dog(z, min_sigma=1., max_sigma=50, sigma_ratio=1.6,
     Returns
     -------
     ndarray
-        (n_peaks, 2)
-        Array of peak coordinates.
+        (n_peaks, 3)
+        Each row contains (y, x, sigma) where (x, y) are the coordinates of the
+        peak and the radius of the peak is approximately sigma * sqrt(2).
 
     Notes
     -----
@@ -990,18 +991,16 @@ def find_peaks_dog(z, min_sigma=1., max_sigma=50, sigma_ratio=1.6,
     blobs = blob_dog(z, min_sigma=min_sigma, max_sigma=max_sigma,
                      sigma_ratio=sigma_ratio, threshold=threshold,
                      overlap=overlap)
-    try:
-        centers = blobs[:, :2]
-        intensities = blobs[:, 2]
-    except IndexError:
+    centers = blobs
+    if len(centers) == 0:
         return NO_PEAKS
     clean_centers = []
     for center in centers:
-        if len(np.intersect1d(center, (0,) + z.shape + tuple(
+        if len(np.intersect1d(center[:2], (0,) + z.shape + tuple(
                         c - 1 for c in z.shape))) > 0:
             continue
         clean_centers.append(center)
-    return np.array(clean_centers), intensities
+    return np.array(clean_centers)
 
 
 def find_peaks_log(z, min_sigma=1, max_sigma=50., num_sigma=10.,
@@ -1022,8 +1021,9 @@ def find_peaks_log(z, min_sigma=1, max_sigma=50., num_sigma=10.,
     Returns
     -------
     ndarray
-        (n_peaks, 2)
-        Array of peak coordinates.
+        (n_peaks, 3)
+        Each row contains (y, x, sigma) where (x, y) are the coordinates of the
+        peak and the radius of the peak is approximately sigma * sqrt(2).
 
     """
     from skimage.feature import blob_log
@@ -1033,9 +1033,13 @@ def find_peaks_log(z, min_sigma=1, max_sigma=50., num_sigma=10.,
                      log_scale=log_scale)
     # Attempt to return only peak positions. If no peaks exist, return an
     # empty array.
-    try:
-        centers = blobs[:, :2]
-        intensities = blobs[:, 2]
-    except IndexError:
+    centers = blobs
+    if len(centers) == 0:
         return NO_PEAKS
-    return centers, intensities
+    clean_centers = []
+    for center in centers:
+        if len(np.intersect1d(center[:2], (0,) + z.shape + tuple(
+                        c - 1 for c in z.shape))) > 0:
+            continue
+        clean_centers.append(center)
+    return np.array(clean_centers)

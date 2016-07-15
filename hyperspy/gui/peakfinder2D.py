@@ -40,7 +40,7 @@ class PeakFinderUIBase:
 
     def get_peaks(self):
         peaks = self.current_method(self.get_data(),
-                                    **self.params[self._method])
+                                    **self.params[self._method])[:, :2]
         return peaks
 
 
