@@ -56,15 +56,15 @@ ref_data2 = np.array(
 
       [[28, 25, 29, 15, 29],
        [12, 15, 12, 25, 24],
-        [25, 26, 26, 18, 27],
-        [19, 18, 20, 23, 28],
-        [28, 18, 22, 25, 0]],
+       [25, 26, 26, 18, 27],
+       [19, 18, 20, 23, 28],
+       [28, 18, 22, 25, 0]],
 
       [[21, 29, 25, 19, 18],
        [30, 15, 20, 22, 26],
-        [23, 18, 26, 15, 25],
-        [22, 25, 24, 15, 20],
-        [22, 15, 15, 21, 23]]],
+       [23, 18, 26, 15, 25],
+       [22, 25, 24, 15, 20],
+       [22, 15, 15, 21, 23]]],
 
 
      [[[28, 25, 26, 24, 26],
@@ -73,17 +73,17 @@ ref_data2 = np.array(
        [21, 24, 19, 17, 0],
        [17, 14, 25, 15, 26]],
 
-        [[25, 18, 20, 15, 24],
-         [19, 13, 23, 18, 11],
-         [0, 25, 0, 0, 14],
-         [26, 22, 22, 11, 14],
-         [21, 0, 15, 13, 19]],
+      [[25, 18, 20, 15, 24],
+       [19, 13, 23, 18, 11],
+       [0, 25, 0, 0, 14],
+       [26, 22, 22, 11, 14],
+       [21, 0, 15, 13, 19]],
 
-        [[24, 18, 20, 22, 21],
-         [13, 25, 20, 28, 29],
-         [15, 17, 24, 23, 23],
-         [22, 21, 21, 22, 18],
-         [24, 25, 18, 18, 27]]]], dtype=np.uint8)
+      [[24, 18, 20, 22, 21],
+       [13, 25, 20, 28, 29],
+       [15, 17, 24, 23, 23],
+       [22, 21, 21, 22, 18],
+       [24, 25, 18, 18, 27]]]], dtype=np.uint8)
 
 axes1 = {
     'axis-0': {
@@ -145,7 +145,25 @@ def test_save_load_cycle():
         gc.collect()
         _remove_file(save_path)
 
-
+def test_different_x_y_scale_units():
+    # perform load and save cycle with changing the scale on y
+    signal = hs.load(file2)
+    signal.axes_manager[0].scale = 50.0
+    try:
+        signal.save(save_path, overwrite=True)
+        sig_reload = hs.load(save_path)
+        nt.assert_almost_equal(sig_reload.axes_manager[0].scale, 50.0,
+                               places=2)        
+        nt.assert_almost_equal(sig_reload.axes_manager[1].scale, 64.0,
+                               places=2)        
+        nt.assert_almost_equal(sig_reload.axes_manager[2].scale, 0.0160616,
+                               places=5)
+    finally:
+        # Delete reference to close memmap file!
+        del sig_reload
+        gc.collect()
+        _remove_file(save_path)
+        
 def test_default_header():
     # Simply check that no exceptions are raised
     header = get_default_header()
