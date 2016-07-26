@@ -167,7 +167,7 @@ class ClusterTools:
         return partition
 
     def plot2d(self, indices=(0, 1), size_multiplier=30., size_offset=1.,
-               ax=None):
+               ax=None, components='all'):
         """Creates a plot of the data projected on to two dimensions.
 
         Parameters
@@ -187,6 +187,7 @@ class ClusterTools:
 
         """
 
+
         try:
             x = self.learning_results.loadings
         except AttributeError:
@@ -204,6 +205,9 @@ class ClusterTools:
             c = self.mean().data.reshape((1, -1))
             self.fold()
 
+        if components == 'all':
+            components = tuple(range(q))
+
         a = indices[0]
         b = indices[1]
 
@@ -213,12 +217,12 @@ class ClusterTools:
         s_list = []
         cmap = plt.get_cmap('Set1')
         colors = [cmap(i) for i in np.linspace(0, 1, len(u))]
-        for i, u_i in enumerate(u):
+        for i, u_i in enumerate(u[components, :]):
             select = np.max(u, axis=0) == u_i
             s = ax.scatter(x[:, a][select], x[:, b][select], marker='o',
                            s=size_multiplier * (u_i[select] - size_offset / q),
                            c=colors[i])
-            ax.scatter(c[i][a], c[i][b], marker='o', s=80, c=colors[i])
+            ax.scatter(c[i][a], c[i][b], marker='x', s=80, c=colors[i])
             s_list.append(s)
         plt.title(self.learning_results.cluster_algorithm.__class__.__name__)
         plt.legend(s_list, range(q))
